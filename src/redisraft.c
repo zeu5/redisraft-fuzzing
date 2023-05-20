@@ -2021,6 +2021,8 @@ RRStatus RedisRaftCtxInit(RedisRaftCtx *rr, RedisModuleCtx *ctx)
     /* Snapshot state initialization */
     SnapshotInit(rr);
 
+    NetrixInit(rr, &rr->config);
+
     /* Raft log exists -> go into RAFT_LOADING state:
      *
      * Redis will load RDB as a snapshot, if it exists. When done,

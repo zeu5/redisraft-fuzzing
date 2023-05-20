@@ -16,6 +16,8 @@
 #include <stdio.h>
 #include <time.h>
 #include <unistd.h>
+#include <libnetrixclient/netrix.h>
+
 #ifdef HAVE_TLS
 #include "hiredis/hiredis_ssl.h"
 
@@ -364,6 +366,8 @@ typedef struct RedisRaftConfig {
 
     /* TLS */
     bool tls_enabled; /* Use TLS for all inter cluster communication */
+    /* Netrix testing*/
+    bool use_netrix;
 
 #ifdef HAVE_TLS
     SSL_CTX *ssl; /* OpenSSL context for use by hiredis */
@@ -406,6 +410,7 @@ typedef struct RedisRaftCtx {
     RedisModuleDict *client_state;      /* A dict that tracks different client states */
     struct CommandSpecTable *commands_spec_table;
     RedisModuleDict *subcommand_spec_tables; /* a dict that maps aggregate commands to its subcommand table */
+    NetrixWrapper* netrix_wrapper;
 
     /* General stats */
     unsigned long client_attached_entries;       /* Number of log entries attached to user connections */
@@ -1009,5 +1014,25 @@ void blockedCommandsLoad(RedisModuleIO *rdb);
 void clearAllBlockCommands();
 int extractBlockingTimeout(RedisModuleCtx *ctx, RaftRedisCommandArray *cmds, long long *timeout);
 void replaceBlockingTimeout(RaftRedisCommandArray *cmds);
+
+/* netrix_wrapper.c */
+
+
+
+// typedef struct netrix_callbacks {
+//     raft_ae_cb 
+//     raft_aeresp_cb
+//     raft_rv_cb
+//     raft_rvresp_cb
+//     raft_snap_cb
+//     raft_snapresp_cb
+//     raft_timeout_cb
+// }
+
+typedef struct NetrixWrapper {
+    netrix_client* client;
+} NetrixWrapper;
+
+int NetrixInit(RedisRaftCtx*, RedisRaftConfig*);
 
 #endif

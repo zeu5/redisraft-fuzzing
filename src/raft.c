@@ -898,6 +898,9 @@ static int raftSendAppendEntries(raft_server_t *raft, void *user_data,
 {
     Node *node = (Node *) raft_node_get_udata(raft_node);
 
+    // RedisRaftCtx* rr = (RedisRaftCtx *) user_data;
+    // bool use_netrix = rr->config.use_netrix;
+
     int argc = 5 + msg->n_entries * 2;
     char **argv = NULL;
     size_t *argvlen = NULL;

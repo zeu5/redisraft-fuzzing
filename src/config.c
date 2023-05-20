@@ -99,6 +99,7 @@ static const char *conf_snapshot_fail = "snapshot-fail";
 static const char *conf_snapshot_disable = "snapshot-disable";
 static const char *conf_snapshot_disable_load = "snapshot-disable-load";
 static const char *conf_migration_debug = "migration-debug";
+static const char *conf_use_netrix = "use-netrix";
 
 const char *err_init = "Configuration change is not allowed after init/join for this parameter";
 const char *err_raft = "Failed to configure raft: internal error";
@@ -482,6 +483,8 @@ static int getBool(const char *name, void *privdata)
         return c->snapshot_disable;
     } else if (strcasecmp(name, conf_snapshot_disable_load) == 0) {
         return c->snapshot_disable_load;
+    } else if (strcasecmp(name, conf_use_netrix) == 0) {
+        return c->use_netrix;
     }
 
     return REDISMODULE_ERR;
@@ -557,7 +560,9 @@ static int setBool(const char *name, int val, void *pr, RedisModuleString **err)
         c->snapshot_disable = val;
     } else if (strcasecmp(name, conf_snapshot_disable_load) == 0) {
         c->snapshot_disable_load = val;
-    } else {
+    } else if (strcasecmp(name, conf_use_netrix) == 0) {
+        c->use_netrix = true;
+    }else {
         return REDISMODULE_ERR;
     }
 
@@ -812,6 +817,8 @@ RRStatus ConfigInit(RedisModuleCtx *ctx, RedisRaftConfig *c)
     ret |= RedisModule_RegisterBoolConfig(ctx,    conf_snapshot_fail,              false,            REDISMODULE_CONFIG_HIDDEN,                  getBool,    setBool,    NULL, c);
     ret |= RedisModule_RegisterBoolConfig(ctx,    conf_snapshot_disable,           false,            REDISMODULE_CONFIG_HIDDEN,                  getBool,    setBool,    NULL, c);
     ret |= RedisModule_RegisterBoolConfig(ctx,    conf_snapshot_disable_load,      false,            REDISMODULE_CONFIG_HIDDEN,                  getBool,    setBool,    NULL, c);
+    ret |= RedisModule_RegisterBoolConfig(ctx,    conf_use_netrix,                 false,
+    REDISMODULE_CONFIG_IMMUTABLE,               getBool,    setBool,    NULL, c);
 
                                                   /* name */                   /* default-value */   /* flags */
     ret |= RedisModule_RegisterStringConfig(ctx,  conf_log_filename,               "redisraft.db",   REDISMODULE_CONFIG_DEFAULT,                 getString,  setString,  NULL, c);
