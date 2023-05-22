@@ -366,8 +366,12 @@ typedef struct RedisRaftConfig {
 
     /* TLS */
     bool tls_enabled; /* Use TLS for all inter cluster communication */
+
     /* Netrix testing*/
-    bool use_netrix;
+    bool use_netrix;            /* Do we use netrix for testing? */
+    NodeAddr netrix_listener_addr;  /* Server addr to listen to netrix requests */
+    NodeAddr netrix_server_addr;   /* Netrix server addr */
+
 
 #ifdef HAVE_TLS
     SSL_CTX *ssl; /* OpenSSL context for use by hiredis */
@@ -410,7 +414,7 @@ typedef struct RedisRaftCtx {
     RedisModuleDict *client_state;      /* A dict that tracks different client states */
     struct CommandSpecTable *commands_spec_table;
     RedisModuleDict *subcommand_spec_tables; /* a dict that maps aggregate commands to its subcommand table */
-    NetrixWrapper* netrix_wrapper;
+    NetrixWrapper* netrix_wrapper;      /* Netrix communication wrapper */
 
     /* General stats */
     unsigned long client_attached_entries;       /* Number of log entries attached to user connections */

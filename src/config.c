@@ -100,6 +100,8 @@ static const char *conf_snapshot_disable = "snapshot-disable";
 static const char *conf_snapshot_disable_load = "snapshot-disable-load";
 static const char *conf_migration_debug = "migration-debug";
 static const char *conf_use_netrix = "use-netrix";
+static const char *conf_netrix_listen_addr = "netrix-listen-addr";
+static const char *conf_netrix_server_addr = "netrix-server-addr";
 
 const char *err_init = "Configuration change is not allowed after init/join for this parameter";
 const char *err_raft = "Failed to configure raft: internal error";
@@ -339,6 +341,10 @@ static RedisModuleString *getString(const char *name, void *privdata)
         ret = RedisModule_CreateStringPrintf(NULL, "%s", c->cluster_user);
     } else if (strcasecmp(name, conf_cluster_password) == 0) {
         ret = RedisModule_CreateStringPrintf(NULL, "%s", c->cluster_password);
+    } else if (strcasecmp(name, conf_netrix_listen_addr) == 0) {
+        ret = RedisModule_CreateStringPrintf(NULL, "%s:%u", c->netrix_listener_addr.host, c->netrix_listener_addr.port);
+    } else if (strcasecmp(name, conf_netrix_server_addr) == 0) {
+        ret = RedisModule_CreateStringPrintf(NULL, "%s:%u", c->netrix_server_addr.host, c->netrix_server_addr.port);
     }
 
     if (ret) {
@@ -408,7 +414,23 @@ static int setString(const char *name,
     } else if (strcasecmp(name, conf_cluster_password) == 0) {
         RedisModule_Free(c->cluster_password);
         c->cluster_password = RedisModule_Strdup(value);
-    } else {
+    } else if (strcasecmp(name, conf_netrix_listen_addr) == 0) {
+        if (*value == '\0') {
+            c->netrix_listener_addr = (NodeAddr){0};
+        } else if (!NodeAddrParse(value, len, &c->netrix_listener_addr)) {
+            *err = RedisModule_CreateStringPrintf(NULL, "Address is invalid. It must be in the form of 10.0.0.3:8000");
+            return REDISMODULE_ERR;
+        }
+    } else if (strcasecmp(name, conf_netrix_server_addr) == 0) {
+        if (*value == '\0') {
+            c->netrix_server_addr = (NodeAddr){0};
+        } else if (!NodeAddrParse(value, len, &c->netrix_server_addr)) {
+            *err = RedisModule_CreateStringPrintf(NULL, "Address is invalid. It must be in the form of 10.0.0.3:8000");
+            return REDISMODULE_ERR;
+        }
+    }
+    
+    else {
         return REDISMODULE_ERR;
     }
 
@@ -817,8 +839,7 @@ RRStatus ConfigInit(RedisModuleCtx *ctx, RedisRaftConfig *c)
     ret |= RedisModule_RegisterBoolConfig(ctx,    conf_snapshot_fail,              false,            REDISMODULE_CONFIG_HIDDEN,                  getBool,    setBool,    NULL, c);
     ret |= RedisModule_RegisterBoolConfig(ctx,    conf_snapshot_disable,           false,            REDISMODULE_CONFIG_HIDDEN,                  getBool,    setBool,    NULL, c);
     ret |= RedisModule_RegisterBoolConfig(ctx,    conf_snapshot_disable_load,      false,            REDISMODULE_CONFIG_HIDDEN,                  getBool,    setBool,    NULL, c);
-    ret |= RedisModule_RegisterBoolConfig(ctx,    conf_use_netrix,                 false,
-    REDISMODULE_CONFIG_IMMUTABLE,               getBool,    setBool,    NULL, c);
+    ret |= RedisModule_RegisterBoolConfig(ctx,    conf_use_netrix,                 false,            REDISMODULE_CONFIG_IMMUTABLE,               getBool,    setBool,    NULL, c);
 
                                                   /* name */                   /* default-value */   /* flags */
     ret |= RedisModule_RegisterStringConfig(ctx,  conf_log_filename,               "redisraft.db",   REDISMODULE_CONFIG_DEFAULT,                 getString,  setString,  NULL, c);
@@ -828,6 +849,8 @@ RRStatus ConfigInit(RedisModuleCtx *ctx, RedisRaftConfig *c)
     ret |= RedisModule_RegisterStringConfig(ctx,  conf_cluster_user,               "default",        REDISMODULE_CONFIG_DEFAULT,                 getString,  setString,  NULL, c);
     ret |= RedisModule_RegisterStringConfig(ctx,  conf_cluster_password,           "",               REDISMODULE_CONFIG_SENSITIVE |
                                                                                                      REDISMODULE_CONFIG_HIDDEN,                  getString,  setString,  NULL, c);
+    ret |= RedisModule_RegisterStringConfig(ctx,  conf_netrix_listen_addr,         "127.0.0.1:2023", REDISMODULE_CONFIG_IMMUTABLE,               getString,  setString,  NULL, c);
+    ret |= RedisModule_RegisterStringConfig(ctx,  conf_netrix_server_addr,         "127.0.0.1:7074", REDISMODULE_CONFIG_IMMUTABLE,               getString,  setString,  NULL, c);
 
                                                    /* name */                  /* default-value */   /* flags */
     ret |= RedisModule_RegisterEnumConfig(ctx,    conf_loglevel,               LOG_LEVEL_NOTICE,     REDISMODULE_CONFIG_DEFAULT,  redisraft_loglevels,   redisraft_loglevel_enums, LOG_LEVEL_COUNT,      getEnum, setEnum, NULL, c);

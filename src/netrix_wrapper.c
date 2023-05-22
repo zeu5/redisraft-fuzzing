@@ -9,8 +9,19 @@
 
 static int NetrixInit(RedisRaftCtx* rr, RedisRaftConfig* rc) {
     NetrixWrapper* wrapper = malloc(sizeof(NetrixWrapper));
-    client_config config;
-    wrapper->client = create_client(config);
+    netrix_client_config config;
+    
+    config.id = malloc(sizeof(char)*3);
+    sprintf(config.id, "%d", (int )rc->id);
+    config.info = NULL;
+    config.listen_addr = malloc(sizeof(char)*300);
+    config.netrix_addr = malloc(sizeof(char)*300);
+    sprintf(config.listen_addr, "%s:%u", rc->netrix_listener_addr.host, rc->netrix_listener_addr.port);
+    sprintf(config.netrix_addr, "%s:%u", rc->netrix_server_addr.host, rc->netrix_server_addr.port);
+    
+    wrapper->client = netrix_create_client(config);
+    rr->netrix_wrapper = wrapper;
+    
     return 0;
 }
 
