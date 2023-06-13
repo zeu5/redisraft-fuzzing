@@ -769,6 +769,52 @@ static void raftSendNodeShutdown(raft_node_t *raft_node)
     }
 }
 
+/* ------------------------------------ TranslateCommand ------------------------------------ */
+
+static netrix_message* translateCommand(char* command)
+{
+    char* from;
+    char* to;
+    char* type;
+
+    char* cmd = strtok(command, " ");
+
+    if (cmd != NULL)
+    {
+        switch(cmd) {
+            case "RAFT.REQUESTVOTE":
+                int prevote, candidate_id;
+                long term, last_log_idx, last_log_term;
+
+                if (sscanf(cmd, "RAFT.REQUESTVOTE %s %s %d:%ld:%d:%ld:%ld", from, to, &prevote, &term, &candidate_id, &last_log_index, &last_log_term))
+                {
+                    type = cmd;
+                }
+                break;
+            default:
+                int prevote, candidate_id;
+                long term, last_log_idx, last_log_term;
+
+                if (sscanf(cmd, "RAFT.REQUESTVOTE %s %s %d:%ld:%d:%ld:%ld", from, to, &prevote, &term, &candidate_id, &last_log_index, &last_log_term))
+                {
+                    type = cmd;
+                }
+                break;
+        }
+        
+
+    }
+
+    netrix_message* new_message = malloc(sizeof(netrix_message));
+    new_message->to = to;
+    new_message->to = from;
+    new_message->type = type;
+    new_message->data = NULL;
+    new_message->id = -1;
+    
+    return new_message;
+}
+
 /* ------------------------------------ RequestVote ------------------------------------ */
 
 static void handleRequestVoteResponse(redisAsyncContext *c, void *r, void *privdata)
@@ -1636,6 +1682,7 @@ void addUsedNodeId(RedisRaftCtx *rr, raft_node_id_t node_id)
     entry->next = rr->snapshot_info.used_node_ids;
     rr->snapshot_info.used_node_ids = entry;
 }
+
 
 void RaftLibraryInit(RedisRaftCtx *rr, bool cluster_init)
 {

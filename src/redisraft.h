@@ -59,6 +59,7 @@ struct Connection;
 struct ShardingInfo;
 struct ShardGroup;
 struct CommandSpecTable;
+struct NetrixWrapper;
 
 #define REDIS_RAFT_DATATYPE_NAME   "redisraft"
 #define REDIS_RAFT_DATATYPE_ENCVER 1
@@ -414,7 +415,7 @@ typedef struct RedisRaftCtx {
     RedisModuleDict *client_state;      /* A dict that tracks different client states */
     struct CommandSpecTable *commands_spec_table;
     RedisModuleDict *subcommand_spec_tables; /* a dict that maps aggregate commands to its subcommand table */
-    NetrixWrapper* netrix_wrapper;      /* Netrix communication wrapper */
+    struct NetrixWrapper* netrix_wrapper;      /* Netrix communication wrapper */
 
     /* General stats */
     unsigned long client_attached_entries;       /* Number of log entries attached to user connections */
