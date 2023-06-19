@@ -47,9 +47,6 @@
 
 #include "async_private.h"
 
-#include "redisraft.h"
-#include <libnetrixclient/netrix.h>
-
 /* Forward declarations of hiredis.c functions */
 int __redisAppendCommand(redisContext *c, const char *cmd, size_t len);
 void __redisSetError(redisContext *c, int type, const char *str);
@@ -749,11 +746,6 @@ static int __redisAsyncCommand(redisAsyncContext *ac, redisCallbackFn *fn, void 
     const char *p;
     sds sname;
     int ret;
-    
-    Node *node = privdata;
-    RedisRaftCtx *rr = node->rr;
-    netrix_client* client = rr->nextrix_wrapper->client;
-    netrix_message* msg = translateCommand(cmd);
 
     /* Don't accept new commands when the connection is about to be closed. */
     if (c->flags & (REDIS_DISCONNECTING | REDIS_FREEING)) return REDIS_ERR;
@@ -807,22 +799,17 @@ static int __redisAsyncCommand(redisAsyncContext *ac, redisCallbackFn *fn, void 
      } else if(strncasecmp(cstr,"monitor\r\n",9) == 0) {
          /* Set monitor flag and push callback */
          c->flags |= REDIS_MONITORING;
-         /* INSERT NETRIX CALLBACK */
          __redisPushCallback(&ac->replies,&cb);
     } else {
         if (c->flags & REDIS_SUBSCRIBED)
             /* This will likely result in an error reply, but it needs to be
              * received and passed to the callback. */
-            /* INSERT NETRIX CALLBACK */
             __redisPushCallback(&ac->sub.invalid,&cb);
         else
-            /* INSERT NETRIX CALLBACK */
             __redisPushCallback(&ac->replies,&cb);
     }
-    /* INSERT NETRIX PUSH */
-    if(netrix_send_message(client, msg) != 200)
-        return REDIS_ERR;
-    // __redisAppendCommand(c,cmd,len);
+
+    __redisAppendCommand(c,cmd,len);
 
     /* Always schedule a write when the write buffer is non-empty */
     _EL_ADD_WRITE(ac);

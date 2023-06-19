@@ -7,7 +7,7 @@
 #include "redisraft.h"
 #include <libnetrixclient/netrix.h>
 
-static int NetrixInit(RedisRaftCtx* rr, RedisRaftConfig* rc) {
+static RRStatus NetrixInit(RedisRaftCtx* rr, RedisRaftConfig* rc) {
     NetrixWrapper* wrapper = malloc(sizeof(NetrixWrapper));
     netrix_client_config config;
     
@@ -22,6 +22,6 @@ static int NetrixInit(RedisRaftCtx* rr, RedisRaftConfig* rc) {
     wrapper->client = netrix_create_client(config);
     rr->netrix_wrapper = wrapper;
     
-    return 0;
+    return RR_OK;
 }
 
