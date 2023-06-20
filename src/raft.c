@@ -10,6 +10,7 @@
 
 #include <stdlib.h>
 #include <string.h>
+#include <stdbool.h>
 #include <strings.h>
 
 #define RAFTLIB_TRACE(fmt, ...) TRACE_MODULE(RAFTLIB, fmt, ##__VA_ARGS__)
@@ -769,52 +770,6 @@ static void raftSendNodeShutdown(raft_node_t *raft_node)
     }
 }
 
-/* ------------------------------------ TranslateCommand ------------------------------------ */
-
-// static netrix_message* translateCommand(char* command)
-// {
-//     char* from;
-//     char* to;
-//     char* type;
-
-//     char* cmd = strtok(command, " ");
-
-//     if (cmd != NULL)
-//     {
-//         switch(cmd) {
-//             case "RAFT.REQUESTVOTE":
-//                 int prevote, candidate_id;
-//                 long term, last_log_idx, last_log_term;
-
-//                 if (sscanf(cmd, "RAFT.REQUESTVOTE %s %s %d:%ld:%d:%ld:%ld", from, to, &prevote, &term, &candidate_id, &last_log_index, &last_log_term))
-//                 {
-//                     type = cmd;
-//                 }
-//                 break;
-//             default:
-//                 int prevote, candidate_id;
-//                 long term, last_log_idx, last_log_term;
-
-//                 if (sscanf(cmd, "RAFT.REQUESTVOTE %s %s %d:%ld:%d:%ld:%ld", from, to, &prevote, &term, &candidate_id, &last_log_index, &last_log_term))
-//                 {
-//                     type = cmd;
-//                 }
-//                 break;
-//         }
-        
-
-//     }
-
-//     netrix_message* new_message = malloc(sizeof(netrix_message));
-//     new_message->to = to;
-//     new_message->to = from;
-//     new_message->type = type;
-//     new_message->data = NULL;
-//     new_message->id = -1;
-    
-//     return new_message;
-// }
-
 /* ------------------------------------ RequestVote ------------------------------------ */
 
 static void handleRequestVoteResponse(redisAsyncContext *c, void *r, void *privdata)
@@ -944,8 +899,12 @@ static int raftSendAppendEntries(raft_server_t *raft, void *user_data,
 {
     Node *node = (Node *) raft_node_get_udata(raft_node);
 
-    // RedisRaftCtx* rr = (RedisRaftCtx *) user_data;
-    // bool use_netrix = rr->config.use_netrix;
+    RedisRaftCtx* rr = (RedisRaftCtx *) user_data;
+    bool use_netrix = rr->config.use_netrix;
+
+    if (use_netrix) {
+        return netrixSendAppendEntries(rr, msg, raft_node_get_id(raft_node));
+    }
 
     int argc = 5 + msg->n_entries * 2;
     char **argv = NULL;

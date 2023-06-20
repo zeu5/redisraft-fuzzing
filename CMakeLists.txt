@@ -232,6 +232,7 @@ add_library(redisraft MODULE
         src/proxy.c
         src/raft.c
         src/redisraft.c
+        src/netrix_wrapper.c
         src/serialization.c
         src/serialization_utils.c
         src/snapshot.c

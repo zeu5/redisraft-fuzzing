@@ -16,6 +16,7 @@
 #include <stdio.h>
 #include <time.h>
 #include <unistd.h>
+#include <pthread.h>
 #include <libnetrixclient/netrix.h>
 
 #ifdef HAVE_TLS
@@ -1021,23 +1022,14 @@ int extractBlockingTimeout(RedisModuleCtx *ctx, RaftRedisCommandArray *cmds, lon
 void replaceBlockingTimeout(RaftRedisCommandArray *cmds);
 
 /* netrix_wrapper.c */
-
-
-
-// typedef struct netrix_callbacks {
-//     raft_ae_cb 
-//     raft_aeresp_cb
-//     raft_rv_cb
-//     raft_rvresp_cb
-//     raft_snap_cb
-//     raft_snapresp_cb
-//     raft_timeout_cb
-// }
-
 typedef struct NetrixWrapper {
     netrix_client* client;
+    void *user_data;
+    pthread_t message_polling_thread;
+    int signal;
 } NetrixWrapper;
 
-int NetrixInit(RedisRaftCtx*, RedisRaftConfig*);
+RRStatus NetrixInit(RedisRaftCtx*, RedisRaftConfig*);
+int netrixSendAppendEntries(RedisRaftCtx*, raft_appendentries_req_t*, raft_node_id_t);
 
 #endif
