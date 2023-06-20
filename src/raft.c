@@ -1701,6 +1701,12 @@ void RaftLibraryInit(RedisRaftCtx *rr, bool cluster_init)
         raft_entry_release(ety);
     }
 
+    if (rr->config.use_netrix) {
+        if(NetrixRunClient(rr) != 0) {
+            PANIC("Failed to init Netrix client");
+        }
+    }
+
     rr->state = REDIS_RAFT_UP;
 }
 

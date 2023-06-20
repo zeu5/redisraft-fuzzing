@@ -113,29 +113,112 @@ int deserializeAEReq(char *msg, raft_appendentries_req_t *out) {
 }
 
 
-int serializeAEResp(raft_appendentries_resp_t *msg, char **out) {
+int serializeAEResp(raft_appendentries_resp_t *msg, char **out_s) {
+    json_object* out = json_object_new_object();
+
+    json_object_object_add(out, "term", json_object_new_double((double) msg->term));
+    json_object_object_add(out, "success", json_object_new_int( msg->success));
+    json_object_object_add(out, "current_idx", json_object_new_double((double) msg->current_idx));
+    json_object_object_add(out, "msg_id", json_object_new_double((double) msg->msg_id));
+
+    char* result = strdup(json_object_to_json_string(out));
+    *out_s = result;
+    json_object_put(out);
+
     return 0;
 }
 
 int deserializeAEResp(char *msg, raft_appendentries_resp_t *out) {
+    json_object* obj = json_tokener_parse(msg);
+    if(obj == NULL) {
+        return -1;
+    }
+    json_object* j_term = json_object_object_get(obj, "term");
+    json_object* j_success = json_object_object_get(obj, "success");
+    json_object* j_current_idx = json_object_object_get(obj, "current_idx");
+    json_object* j_msg_id = json_object_object_get(obj, "msg_id");
+
+
+    out->success = json_object_get_int(j_success);
+    out->term = (raft_term_t) json_object_get_double(j_term);
+    out->current_idx = (raft_index_t) json_object_get_double(j_current_idx);
+    out->msg_id = (raft_msg_id_t) json_object_get_double(j_msg_id);
+
+    json_object_put(obj);
     return 0;
 }
 
 
-int serializeRVReq(raft_requestvote_req_t *msg, char **out) {
+int serializeRVReq(raft_requestvote_req_t *msg, char **out_s) {
+    json_object* out = json_object_new_object();
+
+    json_object_object_add(out, "prevote", json_object_new_int(msg->prevote));
+    json_object_object_add(out, "term", json_object_new_double((double) msg->term));
+    json_object_object_add(out, "candidate_id", json_object_new_double((double) msg->candidate_id));
+    json_object_object_add(out, "last_log_idx", json_object_new_double((double) msg->last_log_idx));
+    json_object_object_add(out, "last_log_term", json_object_new_double((double) msg->last_log_term));
+
+    char* result = strdup(json_object_to_json_string(out));
+    *out_s = result;
+    json_object_put(out);
+
     return 0;
 }
 
 int deserializeRVReq(char *msg, raft_requestvote_req_t *out) {
+    json_object* obj = json_tokener_parse(msg);
+    if(obj == NULL) {
+        return -1;
+    }
+    json_object* j_prevote = json_object_object_get(obj, "prevote");
+    json_object* j_term = json_object_object_get(obj, "term");
+    json_object* j_candidate_id = json_object_object_get(obj, "candidate_id");
+    json_object* j_last_log_idx = json_object_object_get(obj, "last_log_idx");
+    json_object* j_last_log_term = json_object_object_get(obj, "last_log_term");
+
+    out->prevote = json_object_get_int(j_prevote);
+    out->term = (raft_term_t) json_object_get_double(j_term);
+    out->last_log_idx = (raft_index_t) json_object_get_double(j_last_log_idx);
+    out->last_log_term = (raft_term_t) json_object_get_double(j_last_log_term);
+    out->candidate_id = (raft_node_id_t) json_object_get_double(j_candidate_id);
+
+    json_object_put(obj);
     return 0;
 }
 
 
-int serializeRVResp(raft_requestvote_resp_t *msg, char **out) {
+int serializeRVResp(raft_requestvote_resp_t *msg, char **out_s) {
+    json_object* out = json_object_new_object();
+
+    json_object_object_add(out, "term", json_object_new_double((double) msg->term));
+    json_object_object_add(out, "prevote", json_object_new_int( msg->prevote));
+    json_object_object_add(out, "request_term", json_object_new_double((double) msg->request_term));
+    json_object_object_add(out, "vote_granted", json_object_new_int( msg->vote_granted));
+
+    char* result = strdup(json_object_to_json_string(out));
+    *out_s = result;
+    json_object_put(out);
+
     return 0;
 }
 
 int deserializeRVResp(char *msg, raft_requestvote_resp_t *out) {
+    json_object* obj = json_tokener_parse(msg);
+    if(obj == NULL) {
+        return -1;
+    }
+    json_object* j_term = json_object_object_get(obj, "term");
+    json_object* j_prevote = json_object_object_get(obj, "prevote");
+    json_object* j_request_term = json_object_object_get(obj, "request_term");
+    json_object* j_vote_granted = json_object_object_get(obj, "vote_granted");
+
+
+    out->prevote = json_object_get_int(j_prevote);
+    out->vote_granted = json_object_get_int(j_vote_granted);
+    out->term = (raft_term_t) json_object_get_double(j_term);
+    out->request_term = (raft_term_t) json_object_get_double(j_request_term);
+
+    json_object_put(obj);
     return 0;
 }
 
