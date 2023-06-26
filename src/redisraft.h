@@ -1030,6 +1030,11 @@ typedef struct NetrixWrapper {
 } NetrixWrapper;
 
 RRStatus NetrixInit(RedisRaftCtx*, RedisRaftConfig*);
+int NetrixRunClient(RedisRaftCtx*);
+int NetrixSignalClient(RedisRaftCtx*, int);
 int netrixSendAppendEntries(RedisRaftCtx*, raft_appendentries_req_t*, raft_node_id_t);
+int netrixSendAppendEntriesResponse(RedisRaftCtx*, raft_appendentries_resp_t*, raft_node_id_t);
+int netrixSendRequestVote(RedisRaftCtx*, raft_requestvote_req_t*, raft_node_id_t);
+int netrixSendRequestVoteResponse(RedisRaftCtx*, raft_requestvote_resp_t*, raft_node_id_t);
 
 #endif

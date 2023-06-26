@@ -26,11 +26,18 @@ RRStatus NetrixInit(RedisRaftCtx* rr, RedisRaftConfig* rc) {
     config.listen_addr = listen_addr;
     config.netrix_addr = netrix_addr;
     
-    wrapper->client = netrix_create_client(config);
+    netrix_client* client = netrix_create_client(config);
+    if(client == NULL) {
+        LOG_NOTICE("Failed to create netrix client");
+        return RR_ERROR;
+    }
+
+    wrapper->client = client;
     wrapper->user_data = rr;
     wrapper->signal = 0;
     wrapper->message_polling_thread = NULL;
 
+    LOG_NOTICE("Created netrix client");
     rr->netrix_wrapper = wrapper;
     return RR_OK;
 }
@@ -38,6 +45,7 @@ RRStatus NetrixInit(RedisRaftCtx* rr, RedisRaftConfig* rc) {
 int serializeAEReq(raft_appendentries_req_t *msg, char **out_s) {
     json_object* out = json_object_new_object();
 
+    json_object_object_add(out, "type", json_object_new_string("append_entries_request"));
     json_object_object_add(out, "leader_id", json_object_new_int((int) msg->leader_id));
     json_object_object_add(out, "term", json_object_new_double((double) msg->term));
     json_object_object_add(out, "prev_log_idx", json_object_new_double((double) msg->prev_log_idx));
@@ -116,6 +124,7 @@ int deserializeAEReq(char *msg, raft_appendentries_req_t *out) {
 int serializeAEResp(raft_appendentries_resp_t *msg, char **out_s) {
     json_object* out = json_object_new_object();
 
+    json_object_object_add(out, "type", json_object_new_string("append_entries_response"));
     json_object_object_add(out, "term", json_object_new_double((double) msg->term));
     json_object_object_add(out, "success", json_object_new_int( msg->success));
     json_object_object_add(out, "current_idx", json_object_new_double((double) msg->current_idx));
@@ -152,6 +161,7 @@ int deserializeAEResp(char *msg, raft_appendentries_resp_t *out) {
 int serializeRVReq(raft_requestvote_req_t *msg, char **out_s) {
     json_object* out = json_object_new_object();
 
+    json_object_object_add(out, "type", json_object_new_string("request_vote_request"));
     json_object_object_add(out, "prevote", json_object_new_int(msg->prevote));
     json_object_object_add(out, "term", json_object_new_double((double) msg->term));
     json_object_object_add(out, "candidate_id", json_object_new_double((double) msg->candidate_id));
@@ -190,6 +200,7 @@ int deserializeRVReq(char *msg, raft_requestvote_req_t *out) {
 int serializeRVResp(raft_requestvote_resp_t *msg, char **out_s) {
     json_object* out = json_object_new_object();
 
+    json_object_object_add(out, "type", json_object_new_string("request_vote_response"));
     json_object_object_add(out, "term", json_object_new_double((double) msg->term));
     json_object_object_add(out, "prevote", json_object_new_int( msg->prevote));
     json_object_object_add(out, "request_term", json_object_new_double((double) msg->request_term));
