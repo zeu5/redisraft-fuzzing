@@ -1036,5 +1036,6 @@ int netrixSendAppendEntries(RedisRaftCtx*, raft_appendentries_req_t*, raft_node_
 int netrixSendAppendEntriesResponse(RedisRaftCtx*, raft_appendentries_resp_t*, raft_node_id_t);
 int netrixSendRequestVote(RedisRaftCtx*, raft_requestvote_req_t*, raft_node_id_t);
 int netrixSendRequestVoteResponse(RedisRaftCtx*, raft_requestvote_resp_t*, raft_node_id_t);
+int netrixSendEvent(RedisRaftCtx*, RedisModuleString*, RedisModuleDict*);
 
 #endif

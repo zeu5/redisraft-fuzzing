@@ -10,6 +10,30 @@
 #include <libnetrixclient/netrix.h>
 #include <json-c/json.h>
 
+void netrixDirectiveHandler(NETRIX_DIRECTIVE directive, void *user_data) {
+    RedisRaftCtx* rr = (RedisRaftCtx*) user_data;
+    RedisModuleCtx* ctx = rr->ctx;
+
+    switch (directive) {
+    case NETRIX_START_DIRECTIVE:
+        if (RedisRaftCtxInit(rr, ctx) == RR_ERROR) {
+            RedisRaftCtxClear(rr);
+        }
+        break;
+    case NETRIX_STOP_DIRECTIVE:
+        RedisRaftCtxClear(rr);
+        break;
+    case NETRIX_RESTART_DIRECTIVE:
+        RedisRaftCtxClear(rr);
+        if (RedisRaftCtxInit(rr, ctx) == RR_ERROR) {
+            RedisRaftCtxClear(rr);
+        }
+        break;
+    default:
+        break;
+    }
+}
+
 RRStatus NetrixInit(RedisRaftCtx* rr, RedisRaftConfig* rc) {
     NetrixWrapper* wrapper = malloc(sizeof(NetrixWrapper));
     netrix_client_config config;
@@ -25,6 +49,8 @@ RRStatus NetrixInit(RedisRaftCtx* rr, RedisRaftConfig* rc) {
     config.info = NULL;
     config.listen_addr = listen_addr;
     config.netrix_addr = netrix_addr;
+    config.directive_handler = &netrixDirectiveHandler;
+    config.user_data = rr;
     
     netrix_client* client = netrix_create_client(config);
     if(client == NULL) {
@@ -410,5 +436,38 @@ int NetrixSignalClient(RedisRaftCtx* rr, int signal) {
 
     netrix_signal_client(n_client, signal);
     n_wrapper->signal = signal;
+    return 0;
+}
+
+int netrixSendEvent(RedisRaftCtx* rr, RedisModuleString* type, RedisModuleDict* params) {
+    NetrixWrapper *n_wrapper = rr->netrix_wrapper;
+    netrix_client *n_client = n_wrapper->client;
+
+    netrix_map* params_map = netrix_create_map();
+    RedisModuleDictIter* params_iter = RedisModule_DictIteratorStartC(params, "^", NULL, 0);
+    size_t keylen;
+    void *data;
+    char *key;
+    while(key = RedisModule_DictNextC(params_iter, &keylen, &data) != NULL) {
+        RedisModuleString* value = (RedisModuleString*) data;
+        size_t valuelen;
+        const char* value_str = RedisModule_StringPtrLen(value, &valuelen);
+        netrix_map_add(params_map, strndup(key, keylen), strndup(value_str, valuelen));
+    }
+    RedisModule_DictIteratorStop(params_iter);
+
+    const char *type;
+    size_t typelen;
+    type = RedisModule_StringPtrLen(type, &typelen);
+
+    netrix_event* event = netrix_create_event(strndup(type, typelen), params_map);
+    long err = netrix_send_event(n_client, event);
+
+    netrix_free_map(params_map);
+    netrix_free_event(event);
+
+    if (err != 0) {
+        return -1;
+    }
     return 0;
 }
