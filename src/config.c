@@ -583,7 +583,7 @@ static int setBool(const char *name, int val, void *pr, RedisModuleString **err)
     } else if (strcasecmp(name, conf_snapshot_disable_load) == 0) {
         c->snapshot_disable_load = val;
     } else if (strcasecmp(name, conf_use_netrix) == 0) {
-        c->use_netrix = true;
+        c->use_netrix = val;
     }else {
         return REDISMODULE_ERR;
     }
@@ -839,7 +839,7 @@ RRStatus ConfigInit(RedisModuleCtx *ctx, RedisRaftConfig *c)
     ret |= RedisModule_RegisterBoolConfig(ctx,    conf_snapshot_fail,              false,            REDISMODULE_CONFIG_HIDDEN,                  getBool,    setBool,    NULL, c);
     ret |= RedisModule_RegisterBoolConfig(ctx,    conf_snapshot_disable,           false,            REDISMODULE_CONFIG_HIDDEN,                  getBool,    setBool,    NULL, c);
     ret |= RedisModule_RegisterBoolConfig(ctx,    conf_snapshot_disable_load,      false,            REDISMODULE_CONFIG_HIDDEN,                  getBool,    setBool,    NULL, c);
-    ret |= RedisModule_RegisterBoolConfig(ctx,    conf_use_netrix,                 false,            REDISMODULE_CONFIG_IMMUTABLE,               getBool,    setBool,    NULL, c);
+    ret |= RedisModule_RegisterBoolConfig(ctx,    conf_use_netrix,                 false,            REDISMODULE_CONFIG_DEFAULT,                 getBool,    setBool,    NULL, c);
 
                                                   /* name */                   /* default-value */   /* flags */
     ret |= RedisModule_RegisterStringConfig(ctx,  conf_log_filename,               "redisraft.db",   REDISMODULE_CONFIG_DEFAULT,                 getString,  setString,  NULL, c);
@@ -849,8 +849,8 @@ RRStatus ConfigInit(RedisModuleCtx *ctx, RedisRaftConfig *c)
     ret |= RedisModule_RegisterStringConfig(ctx,  conf_cluster_user,               "default",        REDISMODULE_CONFIG_DEFAULT,                 getString,  setString,  NULL, c);
     ret |= RedisModule_RegisterStringConfig(ctx,  conf_cluster_password,           "",               REDISMODULE_CONFIG_SENSITIVE |
                                                                                                      REDISMODULE_CONFIG_HIDDEN,                  getString,  setString,  NULL, c);
-    ret |= RedisModule_RegisterStringConfig(ctx,  conf_netrix_listen_addr,         "127.0.0.1:2023", REDISMODULE_CONFIG_IMMUTABLE,               getString,  setString,  NULL, c);
-    ret |= RedisModule_RegisterStringConfig(ctx,  conf_netrix_server_addr,         "127.0.0.1:7074", REDISMODULE_CONFIG_IMMUTABLE,               getString,  setString,  NULL, c);
+    ret |= RedisModule_RegisterStringConfig(ctx,  conf_netrix_listen_addr,         "127.0.0.1:2023", REDISMODULE_CONFIG_DEFAULT,                 getString,  setString,  NULL, c);
+    ret |= RedisModule_RegisterStringConfig(ctx,  conf_netrix_server_addr,         "127.0.0.1:7074", REDISMODULE_CONFIG_DEFAULT,                 getString,  setString,  NULL, c);
 
                                                    /* name */                  /* default-value */   /* flags */
     ret |= RedisModule_RegisterEnumConfig(ctx,    conf_loglevel,               LOG_LEVEL_NOTICE,     REDISMODULE_CONFIG_DEFAULT,  redisraft_loglevels,   redisraft_loglevel_enums, LOG_LEVEL_COUNT,      getEnum, setEnum, NULL, c);

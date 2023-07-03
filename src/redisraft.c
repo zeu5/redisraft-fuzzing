@@ -2022,9 +2022,12 @@ RRStatus RedisRaftCtxInit(RedisRaftCtx *rr, RedisModuleCtx *ctx)
     SnapshotInit(rr);
 
     /* Initializing netrix wrapper */
-    if (NetrixInit(rr, &rr->config) != RR_OK) {
-        LOG_WARNING("Failed to initialize netrix");
-        goto error;
+    if (rr->config.use_netrix) {
+        LOG_NOTICE("Initializing netrix");
+        if (NetrixInit(rr, &rr->config) != RR_OK) {
+            LOG_WARNING("Failed to initialize netrix");
+            goto error;
+        }
     }
 
     /* Raft log exists -> go into RAFT_LOADING state:

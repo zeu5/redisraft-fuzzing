@@ -11,6 +11,7 @@
 #include <json-c/json.h>
 
 void netrixDirectiveHandler(NETRIX_DIRECTIVE directive, void *user_data) {
+    LOG_NOTICE("Handling netrix directive %s", netrix_directive_name(directive));
     RedisRaftCtx* rr = (RedisRaftCtx*) user_data;
     RedisModuleCtx* ctx = rr->ctx;
 
@@ -271,9 +272,7 @@ int netrixSendAppendEntries(RedisRaftCtx* rr, raft_appendentries_req_t *msg, raf
     sprintf(to, "%d", (int) to_id);
 
     netrix_message* n_message = netrix_create_message(to, req, message_type);
-
     netrix_client* client = netrix_wrapper->client;
-
     int out = 0;
     if (netrix_send_message(client, n_message) != 0) {
         out = -1;
@@ -352,8 +351,8 @@ int netrixSendRequestVoteResponse(RedisRaftCtx* rr, raft_requestvote_resp_t *msg
 }
 
 int handleNetrixMessage(NetrixWrapper* wrapper, netrix_message* message, void* user_data) {
-    int from_id;
-    if(sscanf(message->from, "%d", &from_id) != 1) {
+    int from_id = atoi(message->from);
+    if(from_id == 0) {
         return -1;
     }
 
@@ -447,20 +446,23 @@ int netrixSendEvent(RedisRaftCtx* rr, RedisModuleString* type, RedisModuleDict* 
     RedisModuleDictIter* params_iter = RedisModule_DictIteratorStartC(params, "^", NULL, 0);
     size_t keylen;
     void *data;
-    char *key;
-    while(key = RedisModule_DictNextC(params_iter, &keylen, &data) != NULL) {
+    char *key = (char *)RedisModule_DictNextC(params_iter, &keylen, &data);
+    while(key != NULL) {
         RedisModuleString* value = (RedisModuleString*) data;
         size_t valuelen;
         const char* value_str = RedisModule_StringPtrLen(value, &valuelen);
-        netrix_map_add(params_map, strndup(key, keylen), strndup(value_str, valuelen));
+        const char* map_key_copy = strdup(key);
+        const char* value_copy = strdup(value_str);
+        netrix_map_add(params_map, map_key_copy, (void *) value_copy);
+        key = (char *)RedisModule_DictNextC(params_iter, &keylen, &data);
     }
     RedisModule_DictIteratorStop(params_iter);
 
-    const char *type;
+    const char *type_s;
     size_t typelen;
-    type = RedisModule_StringPtrLen(type, &typelen);
+    type_s = RedisModule_StringPtrLen(type, &typelen);
 
-    netrix_event* event = netrix_create_event(strndup(type, typelen), params_map);
+    netrix_event* event = netrix_create_event(strdup(type_s), params_map);
     long err = netrix_send_event(n_client, event);
 
     netrix_free_map(params_map);

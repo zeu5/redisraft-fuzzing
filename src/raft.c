@@ -901,7 +901,6 @@ static int raftSendAppendEntries(raft_server_t *raft, void *user_data,
 
     RedisRaftCtx* rr = (RedisRaftCtx *) user_data;
     bool use_netrix = rr->config.use_netrix;
-
     if (use_netrix) {
         return netrixSendAppendEntries(rr, msg, raft_node_get_id(raft_node));
     }
