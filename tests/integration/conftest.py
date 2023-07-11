@@ -114,6 +114,8 @@ def create_config(pytest_config):
             config.executable] + config.args
         config.executable = 'valgrind'
 
+    # TODO: add fuzzer config options here
+
     return config
 
 
