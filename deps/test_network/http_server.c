@@ -1,6 +1,8 @@
 #include "network.h"
 #include "mongoose.h"
 #include <pthread.h>
+#include <time.h>
+#include <string.h>
 
 typedef struct handler_thread_data {
     redis_test_deque* queue;
@@ -87,14 +89,14 @@ void connection_handler(struct mg_connection *c, int ev, void *ev_data, void *fn
     if (ev == MG_EV_HTTP_MSG) {
         struct mg_http_message* http_msg = (struct mg_http_message*) ev_data;
         redis_test_http_server* server = (redis_test_http_server*) fn_data;
-        const char* uri = strndup(http_msg->uri.ptr, http_msg->uri.len);
+        const char* uri = redis_test_strndup(http_msg->uri.ptr, http_msg->uri.len);
         redis_test_http_handler handler = http_get_handler(server, uri);
 
         handler_thread_data *handler_data = malloc(sizeof(handler_thread_data));
         handler_data->fn_data = server->fn_data;
         handler_data->handler = handler;
         handler_data->queue = redis_test_create_deque();
-        char* body = strndup(http_msg->body.ptr, http_msg->body.len);
+        char* body = redis_test_strndup(http_msg->body.ptr, http_msg->body.len);
         handler_data->body = body;
 
         start_handler_thread(handler_data);

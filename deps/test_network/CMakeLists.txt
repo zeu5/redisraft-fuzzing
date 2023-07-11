@@ -3,10 +3,6 @@ PROJECT(test_network)
 
 set(CMAKE_SHARED_MODULE_SUFFIX ".so")
 
-if (CMAKE_SYSTEM_PROCESSOR MATCHES "arm64|aarch64")
-    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -DMG_ARCH=MG_ARCH_ARMCC")
-endif ()
-
 
 # ------------------------------ Module library ---------------------------------#
 add_library(test_network MODULE

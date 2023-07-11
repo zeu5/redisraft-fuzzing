@@ -900,9 +900,9 @@ static int raftSendAppendEntries(raft_server_t *raft, void *user_data,
     Node *node = (Node *) raft_node_get_udata(raft_node);
 
     RedisRaftCtx* rr = (RedisRaftCtx *) user_data;
-    bool use_netrix = rr->config.use_netrix;
-    if (use_netrix) {
-        return netrixSendAppendEntries(rr, msg, raft_node_get_id(raft_node));
+    bool use_test_network = rr->config.use_test_network;
+    if (use_test_network) {
+        return testNetworkSendAppendEntries(rr, msg, raft_node_get_id(raft_node));
     }
 
     int argc = 5 + msg->n_entries * 2;
@@ -1700,9 +1700,9 @@ void RaftLibraryInit(RedisRaftCtx *rr, bool cluster_init)
         raft_entry_release(ety);
     }
 
-    if (rr->config.use_netrix) {
-        if(NetrixRunClient(rr) != 0) {
-            PANIC("Failed to init Netrix client");
+    if (rr->config.use_test_network) {
+        if(TestNetworkRunClient(rr) != 0) {
+            PANIC("Failed to init Test network client");
         }
     }
 

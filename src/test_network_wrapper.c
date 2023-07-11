@@ -7,55 +7,29 @@
 #include "redisraft.h"
 #include <stdbool.h>
 #include <string.h>
-#include <libnetrixclient/netrix.h>
+#include <test_network/network.h>
 #include <json-c/json.h>
 
-void netrixDirectiveHandler(NETRIX_DIRECTIVE directive, void *user_data) {
-    LOG_NOTICE("Handling netrix directive %s", netrix_directive_name(directive));
-    RedisRaftCtx* rr = (RedisRaftCtx*) user_data;
-    RedisModuleCtx* ctx = rr->ctx;
-
-    switch (directive) {
-    case NETRIX_START_DIRECTIVE:
-        if (RedisRaftCtxInit(rr, ctx) == RR_ERROR) {
-            RedisRaftCtxClear(rr);
-        }
-        break;
-    case NETRIX_STOP_DIRECTIVE:
-        RedisRaftCtxClear(rr);
-        break;
-    case NETRIX_RESTART_DIRECTIVE:
-        RedisRaftCtxClear(rr);
-        if (RedisRaftCtxInit(rr, ctx) == RR_ERROR) {
-            RedisRaftCtxClear(rr);
-        }
-        break;
-    default:
-        break;
-    }
-}
-
-RRStatus NetrixInit(RedisRaftCtx* rr, RedisRaftConfig* rc) {
-    NetrixWrapper* wrapper = malloc(sizeof(NetrixWrapper));
-    netrix_client_config config;
+RRStatus TestNetworkInit(RedisRaftCtx* rr, RedisRaftConfig* rc) {
+    TestNetworkWrapper* wrapper = malloc(sizeof(TestNetworkWrapper));
+    redis_test_client_config config;
     
     char* id = malloc(sizeof(char)*3);
     sprintf(id, "%d", (int )rc->id);
     char* listen_addr = malloc(sizeof(char)*300);
-    char* netrix_addr = malloc(sizeof(char)*300);
-    sprintf(listen_addr, "%s:%u", rc->netrix_listener_addr.host, rc->netrix_listener_addr.port);
-    sprintf(netrix_addr, "%s:%u", rc->netrix_server_addr.host, rc->netrix_server_addr.port);
+    char* redis_test_addr = malloc(sizeof(char)*300);
+    sprintf(listen_addr, "%s:%u", rc->test_network_listener_addr.host, rc->test_network_listener_addr.port);
+    sprintf(redis_test_addr, "%s:%u", rc->test_network_server_addr.host, rc->test_network_server_addr.port);
 
     config.id = id;
     config.info = NULL;
     config.listen_addr = listen_addr;
-    config.netrix_addr = netrix_addr;
-    config.directive_handler = &netrixDirectiveHandler;
+    config.redis_test_addr = redis_test_addr;
     config.user_data = rr;
     
-    netrix_client* client = netrix_create_client(config);
+    redis_test_client* client = redis_test_create_client(config);
     if(client == NULL) {
-        LOG_NOTICE("Failed to create netrix client");
+        LOG_NOTICE("Failed to create test network client");
         return RR_ERROR;
     }
 
@@ -64,8 +38,8 @@ RRStatus NetrixInit(RedisRaftCtx* rr, RedisRaftConfig* rc) {
     wrapper->signal = 0;
     wrapper->message_polling_thread = NULL;
 
-    LOG_NOTICE("Created netrix client");
-    rr->netrix_wrapper = wrapper;
+    LOG_NOTICE("Created test network client");
+    rr->test_network_wrapper = wrapper;
     return RR_OK;
 }
 
@@ -260,8 +234,8 @@ int deserializeRVResp(char *msg, raft_requestvote_resp_t *out) {
     return 0;
 }
 
-int netrixSendAppendEntries(RedisRaftCtx* rr, raft_appendentries_req_t *msg, raft_node_id_t to_id) {
-    NetrixWrapper *netrix_wrapper = rr->netrix_wrapper;
+int testNetworkSendAppendEntries(RedisRaftCtx* rr, raft_appendentries_req_t *msg, raft_node_id_t to_id) {
+    TestNetworkWrapper *test_network_wrapper = rr->test_network_wrapper;
     char *req;
     if(serializeAEReq(msg, &req) != 0) {
         return -1;
@@ -271,18 +245,18 @@ int netrixSendAppendEntries(RedisRaftCtx* rr, raft_appendentries_req_t *msg, raf
     char *to = malloc(sizeof(char)*3);
     sprintf(to, "%d", (int) to_id);
 
-    netrix_message* n_message = netrix_create_message(to, req, message_type);
-    netrix_client* client = netrix_wrapper->client;
+    redis_test_message* n_message = redis_test_create_message(to, req, message_type);
+    redis_test_client* client = test_network_wrapper->client;
     int out = 0;
-    if (netrix_send_message(client, n_message) != 0) {
+    if (redis_test_send_message(client, n_message) != 0) {
         out = -1;
     }
-    netrix_free_message(n_message);
+    redis_test_free_message(n_message);
     return out;
 }
 
-int netrixSendAppendEntriesResponse(RedisRaftCtx* rr, raft_appendentries_resp_t *msg, raft_node_id_t to_id) {
-    NetrixWrapper *netrix_wrapper = rr->netrix_wrapper;
+int testNetworkSendAppendEntriesResponse(RedisRaftCtx* rr, raft_appendentries_resp_t *msg, raft_node_id_t to_id) {
+    TestNetworkWrapper *test_network_wrapper = rr->test_network_wrapper;
     char *req;
     if(serializeAEResp(msg, &req) != 0) {
         return -1;
@@ -292,20 +266,20 @@ int netrixSendAppendEntriesResponse(RedisRaftCtx* rr, raft_appendentries_resp_t 
     char *to = malloc(sizeof(char)*3);
     sprintf(to, "%d", (int) to_id);
 
-    netrix_message* n_message = netrix_create_message(to, req, message_type);
+    redis_test_message* n_message = redis_test_create_message(to, req, message_type);
 
-    netrix_client* client = netrix_wrapper->client;
+    redis_test_client* client = test_network_wrapper->client;
 
     int out = 0;
-    if (netrix_send_message(client, n_message) != 0) {
+    if (redis_test_send_message(client, n_message) != 0) {
         out = -1;
     }
-    netrix_free_message(n_message);
+    redis_test_free_message(n_message);
     return out;
 }
 
-int netrixSendRequestVote(RedisRaftCtx* rr, raft_requestvote_req_t *msg, raft_node_id_t to_id) {
-    NetrixWrapper *netrix_wrapper = rr->netrix_wrapper;
+int testNetworkSendRequestVote(RedisRaftCtx* rr, raft_requestvote_req_t *msg, raft_node_id_t to_id) {
+    TestNetworkWrapper *test_network_wrapper = rr->test_network_wrapper;
     char *req;
     if(serializeRVReq(msg, &req) != 0) {
         return -1;
@@ -315,20 +289,20 @@ int netrixSendRequestVote(RedisRaftCtx* rr, raft_requestvote_req_t *msg, raft_no
     char *to = malloc(sizeof(char)*3);
     sprintf(to, "%d", (int) to_id);
 
-    netrix_message* n_message = netrix_create_message(to, req, message_type);
+    redis_test_message* n_message = redis_test_create_message(to, req, message_type);
 
-    netrix_client* client = netrix_wrapper->client;
+    redis_test_client* client = test_network_wrapper->client;
 
     int out = 0;
-    if (netrix_send_message(client, n_message) != 0) {
+    if (redis_test_send_message(client, n_message) != 0) {
         out = -1;
     }
-    netrix_free_message(n_message);
+    redis_test_free_message(n_message);
     return out;
 }
 
-int netrixSendRequestVoteResponse(RedisRaftCtx* rr, raft_requestvote_resp_t *msg, raft_node_id_t to_id) {
-    NetrixWrapper *netrix_wrapper = rr->netrix_wrapper;
+int testNetworkSendRequestVoteResponse(RedisRaftCtx* rr, raft_requestvote_resp_t *msg, raft_node_id_t to_id) {
+    TestNetworkWrapper *test_network_wrapper = rr->test_network_wrapper;
     char *req;
     if(serializeRVResp(msg, &req) != 0) {
         return -1;
@@ -338,19 +312,19 @@ int netrixSendRequestVoteResponse(RedisRaftCtx* rr, raft_requestvote_resp_t *msg
     char *to = malloc(sizeof(char)*3);
     sprintf(to, "%d", (int) to_id);
 
-    netrix_message* n_message = netrix_create_message(to, req, message_type);
+    redis_test_message* n_message = redis_test_create_message(to, req, message_type);
 
-    netrix_client* client = netrix_wrapper->client;
+    redis_test_client* client = test_network_wrapper->client;
 
     int out = 0;
-    if (netrix_send_message(client, n_message) != 0) {
+    if (redis_test_send_message(client, n_message) != 0) {
         out = -1;
     }
-    netrix_free_message(n_message);
+    redis_test_free_message(n_message);
     return out;
 }
 
-int handleNetrixMessage(NetrixWrapper* wrapper, netrix_message* message, void* user_data) {
+int handleTestNetworkMessage(TestNetworkWrapper* wrapper, redis_test_message* message, void* user_data) {
     int from_id = atoi(message->from);
     if(from_id == 0) {
         return -1;
@@ -376,7 +350,7 @@ int handleNetrixMessage(NetrixWrapper* wrapper, netrix_message* message, void* u
         if(deserializeAEReq(message->data, &req) == 0) {
             raft_appendentries_resp_t resp = {0};
             if(raft_recv_appendentries(me, node, &req, &resp) == 0) {
-                return netrixSendAppendEntriesResponse(rr, &resp, (raft_node_id_t) from_id);
+                return testNetworkSendAppendEntriesResponse(rr, &resp, (raft_node_id_t) from_id);
             }
         }
     } else if(strcmp(message->type, "append_entries_response")) {
@@ -389,7 +363,7 @@ int handleNetrixMessage(NetrixWrapper* wrapper, netrix_message* message, void* u
         if(deserializeRVReq(message->data, &req) == 0) {
             raft_requestvote_resp_t resp = {0};
             if(raft_recv_requestvote(me, node, &req, &resp) == 0) {
-                return netrixSendRequestVoteResponse(rr, &resp, (raft_node_id_t) from_id);
+                return testNetworkSendRequestVoteResponse(rr, &resp, (raft_node_id_t) from_id);
             }
         }
     } else if(strcmp(message->type, "request_vote_response")) {
@@ -401,14 +375,14 @@ int handleNetrixMessage(NetrixWrapper* wrapper, netrix_message* message, void* u
     return 0;
 }
 
-void* poll_netrix_messages(void *arg) {
-    NetrixWrapper *n_wrapper = (NetrixWrapper*) arg;
-    netrix_client *n_client = n_wrapper->client;
+void* poll_redis_test_messages(void *arg) {
+    TestNetworkWrapper *n_wrapper = (TestNetworkWrapper*) arg;
+    redis_test_client *n_client = n_wrapper->client;
     while(n_wrapper->signal == 0) {
-        if (netrix_have_message(n_client)) {
-            netrix_message *message = netrix_receive_message(n_client);
+        if (redis_test_have_message(n_client)) {
+            redis_test_message *message = redis_test_receive_message(n_client);
             if(message != NULL) {
-                handleNetrixMessage(n_wrapper, message, n_wrapper->user_data);
+                handleTestNetworkMessage(n_wrapper, message, n_wrapper->user_data);
                 // TODO need to free allocated memory
             }
         }
@@ -416,33 +390,33 @@ void* poll_netrix_messages(void *arg) {
     return NULL;
 }
 
-int NetrixRunClient(RedisRaftCtx* rr) {
+int TestNetworkRunClient(RedisRaftCtx* rr) {
     // Start the server and run a thread to read messages
-    NetrixWrapper *n_wrapper = rr->netrix_wrapper;
-    netrix_client *n_client = n_wrapper->client;
+    TestNetworkWrapper *n_wrapper = rr->test_network_wrapper;
+    redis_test_client *n_client = n_wrapper->client;
 
-    int ok = netrix_run_client(n_client);
+    int ok = redis_test_run_client(n_client);
     if(ok != 0) {
         return ok;
     }
 
-    return pthread_create(&n_wrapper->message_polling_thread, NULL, poll_netrix_messages, n_wrapper);
+    return pthread_create(&n_wrapper->message_polling_thread, NULL, poll_redis_test_messages, n_wrapper);
 }
 
-int NetrixSignalClient(RedisRaftCtx* rr, int signal) {
-    NetrixWrapper *n_wrapper = rr->netrix_wrapper;
-    netrix_client *n_client = n_wrapper->client;
+int TestNetworkSignalClient(RedisRaftCtx* rr, int signal) {
+    TestNetworkWrapper *n_wrapper = rr->test_network_wrapper;
+    redis_test_client *n_client = n_wrapper->client;
 
-    netrix_signal_client(n_client, signal);
+    redis_test_signal_client(n_client, signal);
     n_wrapper->signal = signal;
     return 0;
 }
 
-int netrixSendEvent(RedisRaftCtx* rr, RedisModuleString* type, RedisModuleDict* params) {
-    NetrixWrapper *n_wrapper = rr->netrix_wrapper;
-    netrix_client *n_client = n_wrapper->client;
+int testNetworkSendEvent(RedisRaftCtx* rr, RedisModuleString* type, RedisModuleDict* params) {
+    TestNetworkWrapper *n_wrapper = rr->test_network_wrapper;
+    redis_test_client *n_client = n_wrapper->client;
 
-    netrix_map* params_map = netrix_create_map();
+    redis_test_map* params_map = redis_test_create_map();
     RedisModuleDictIter* params_iter = RedisModule_DictIteratorStartC(params, "^", NULL, 0);
     size_t keylen;
     void *data;
@@ -453,7 +427,7 @@ int netrixSendEvent(RedisRaftCtx* rr, RedisModuleString* type, RedisModuleDict* 
         const char* value_str = RedisModule_StringPtrLen(value, &valuelen);
         const char* map_key_copy = strdup(key);
         const char* value_copy = strdup(value_str);
-        netrix_map_add(params_map, map_key_copy, (void *) value_copy);
+        redis_test_map_add(params_map, map_key_copy, (void *) value_copy);
         key = (char *)RedisModule_DictNextC(params_iter, &keylen, &data);
     }
     RedisModule_DictIteratorStop(params_iter);
@@ -462,11 +436,11 @@ int netrixSendEvent(RedisRaftCtx* rr, RedisModuleString* type, RedisModuleDict* 
     size_t typelen;
     type_s = RedisModule_StringPtrLen(type, &typelen);
 
-    netrix_event* event = netrix_create_event(strdup(type_s), params_map);
-    long err = netrix_send_event(n_client, event);
+    redis_test_event* event = redis_test_create_event(strdup(type_s), params_map);
+    long err = redis_test_send_event(n_client, event);
 
-    netrix_free_map(params_map);
-    netrix_free_event(event);
+    redis_test_free_map(params_map);
+    redis_test_free_event(event);
 
     if (err != 0) {
         return -1;

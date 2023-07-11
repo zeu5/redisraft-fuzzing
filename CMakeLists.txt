@@ -64,6 +64,7 @@ if (CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|amd64|AMD64")
 elseif (CMAKE_SYSTEM_PROCESSOR MATCHES "arm64|aarch64")
     message(STATUS "System is arm64")
 
+    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -DMG_ARCH=MG_ARCH_ARMCC")
     # Extra check for -march=armv8.1-a
     check_c_compiler_flag(-march=armv8.1-a HAVE_CRC32_HARDWARE)
     if (${HAVE_CRC32_HARDWARE})
@@ -239,7 +240,7 @@ add_library(redisraft MODULE
         src/proxy.c
         src/raft.c
         src/redisraft.c
-        src/netrix_wrapper.c
+        src/test_network_wrapper.c
         src/serialization.c
         src/serialization_utils.c
         src/snapshot.c
@@ -265,7 +266,7 @@ endif ()
 set_property(TARGET redisraft PROPERTY LINK_FLAGS ${LINKER_FLAGS})
 
 target_link_directories(redisraft PUBLIC /usr/local/lib)
-target_link_libraries(redisraft PUBLIC raft hiredis_static test_network_static m libnetrixclient.so)
+target_link_libraries(redisraft PUBLIC raft hiredis_static test_network_static m)
 if (BUILD_TLS)
     target_link_libraries(redisraft PUBLIC OpenSSL::SSL OpenSSL::Crypto hiredis_ssl_static)
 endif ()
@@ -308,6 +309,7 @@ add_executable(main
         src/serialization_utils.c
         src/snapshot.c
         src/sort.c
+        src/test_network_wrapper.c
         src/threadpool.c
         src/util.c
         tests/unit/main.c
@@ -317,7 +319,7 @@ add_executable(main
         tests/unit/test_util.c)
 
 target_compile_options(main PUBLIC -include unit/dut_premble.h)
-target_link_libraries(main PRIVATE raft hiredis_static Threads::Threads dl m)
+target_link_libraries(main PRIVATE raft hiredis_static test_network_static Threads::Threads dl m)
 if (BUILD_TLS)
     target_link_libraries(main PRIVATE OpenSSL::SSL OpenSSL::Crypto hiredis_ssl_static)
 endif ()

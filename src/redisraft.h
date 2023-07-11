@@ -17,7 +17,7 @@
 #include <time.h>
 #include <unistd.h>
 #include <pthread.h>
-#include <libnetrixclient/netrix.h>
+#include <test_network/network.h>
 
 #ifdef HAVE_TLS
 #include "hiredis/hiredis_ssl.h"
@@ -60,7 +60,7 @@ struct Connection;
 struct ShardingInfo;
 struct ShardGroup;
 struct CommandSpecTable;
-struct NetrixWrapper;
+struct TestNetworkWrapper;
 
 #define REDIS_RAFT_DATATYPE_NAME   "redisraft"
 #define REDIS_RAFT_DATATYPE_ENCVER 1
@@ -369,10 +369,10 @@ typedef struct RedisRaftConfig {
     /* TLS */
     bool tls_enabled; /* Use TLS for all inter cluster communication */
 
-    /* Netrix testing*/
-    bool use_netrix;            /* Do we use netrix for testing? */
-    NodeAddr netrix_listener_addr;  /* Server addr to listen to netrix requests */
-    NodeAddr netrix_server_addr;   /* Netrix server addr */
+    /* Testing with controlled network */
+    bool use_test_network;            /* Do we use test network for testing? */
+    NodeAddr test_network_listener_addr;  /* Server addr to listen to test network requests */
+    NodeAddr test_network_server_addr;   /* test network server addr */
 
 
 #ifdef HAVE_TLS
@@ -416,7 +416,7 @@ typedef struct RedisRaftCtx {
     RedisModuleDict *client_state;      /* A dict that tracks different client states */
     struct CommandSpecTable *commands_spec_table;
     RedisModuleDict *subcommand_spec_tables; /* a dict that maps aggregate commands to its subcommand table */
-    struct NetrixWrapper* netrix_wrapper;      /* Netrix communication wrapper */
+    struct TestNetworkWrapper* test_network_wrapper;      /* Test network communication wrapper */
 
     /* General stats */
     unsigned long client_attached_entries;       /* Number of log entries attached to user connections */
@@ -1021,21 +1021,21 @@ void clearAllBlockCommands();
 int extractBlockingTimeout(RedisModuleCtx *ctx, RaftRedisCommandArray *cmds, long long *timeout);
 void replaceBlockingTimeout(RaftRedisCommandArray *cmds);
 
-/* netrix_wrapper.c */
-typedef struct NetrixWrapper {
-    netrix_client* client;
+/* test_network_wrapper.c */
+typedef struct TestNetworkWrapper {
+    redis_test_client* client;
     void *user_data;
     pthread_t message_polling_thread;
     int signal;
-} NetrixWrapper;
+} TestNetworkWrapper;
 
-RRStatus NetrixInit(RedisRaftCtx*, RedisRaftConfig*);
-int NetrixRunClient(RedisRaftCtx*);
-int NetrixSignalClient(RedisRaftCtx*, int);
-int netrixSendAppendEntries(RedisRaftCtx*, raft_appendentries_req_t*, raft_node_id_t);
-int netrixSendAppendEntriesResponse(RedisRaftCtx*, raft_appendentries_resp_t*, raft_node_id_t);
-int netrixSendRequestVote(RedisRaftCtx*, raft_requestvote_req_t*, raft_node_id_t);
-int netrixSendRequestVoteResponse(RedisRaftCtx*, raft_requestvote_resp_t*, raft_node_id_t);
-int netrixSendEvent(RedisRaftCtx*, RedisModuleString*, RedisModuleDict*);
+RRStatus TestNetworkInit(RedisRaftCtx*, RedisRaftConfig*);
+int TestNetworkRunClient(RedisRaftCtx*);
+int TestNetworkSignalClient(RedisRaftCtx*, int);
+int testNetworkSendAppendEntries(RedisRaftCtx*, raft_appendentries_req_t*, raft_node_id_t);
+int testNetworkSendAppendEntriesResponse(RedisRaftCtx*, raft_appendentries_resp_t*, raft_node_id_t);
+int testNetworkSendRequestVote(RedisRaftCtx*, raft_requestvote_req_t*, raft_node_id_t);
+int testNetworkSendRequestVoteResponse(RedisRaftCtx*, raft_requestvote_resp_t*, raft_node_id_t);
+int testNetworkSendEvent(RedisRaftCtx*, RedisModuleString*, RedisModuleDict*);
 
 #endif

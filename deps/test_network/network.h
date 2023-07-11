@@ -72,7 +72,7 @@ void redis_test_free_map(redis_test_map*);
 
 redis_test_deque_elem* redis_test_map_iterator(redis_test_map*);
 
-// Netrix string operations
+// String operations
 typedef struct redis_test_string {
   char *ptr;
   size_t len;
@@ -84,6 +84,8 @@ redis_test_string* redis_test_string_appendn(redis_test_string*, char*, size_t n
 char* redis_test_string_str(redis_test_string*);
 size_t redis_test_string_len(redis_test_string*);
 void redis_test_free_string(redis_test_string*);
+
+char* redis_test_strndup(char*, size_t);
 
 /* http_server.c */
 

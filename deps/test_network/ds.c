@@ -303,3 +303,16 @@ void redis_test_free_string(redis_test_string* s) {
     free(s->ptr);
     free(s);
 }
+
+char* redis_test_strndup(char* str, size_t size) {
+    char *buffer;
+    int n;
+
+    buffer = (char *) malloc(size+1);
+    if (buffer) {
+        for (n = 0; ((n < size) && (str[n] != 0)) ; n++) buffer[n] = str[n];
+        buffer[n] = 0;
+    }
+
+    return buffer;
+}

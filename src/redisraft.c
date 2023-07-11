@@ -2021,11 +2021,11 @@ RRStatus RedisRaftCtxInit(RedisRaftCtx *rr, RedisModuleCtx *ctx)
     /* Snapshot state initialization */
     SnapshotInit(rr);
 
-    /* Initializing netrix wrapper */
-    if (rr->config.use_netrix) {
-        LOG_NOTICE("Initializing netrix");
-        if (NetrixInit(rr, &rr->config) != RR_OK) {
-            LOG_WARNING("Failed to initialize netrix");
+    /* Initializing test network wrapper */
+    if (rr->config.use_test_network) {
+        LOG_NOTICE("Initializing test network");
+        if (TestNetworkInit(rr, &rr->config) != RR_OK) {
+            LOG_WARNING("Failed to initialize test network");
             goto error;
         }
     }

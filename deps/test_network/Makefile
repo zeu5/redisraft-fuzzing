@@ -22,9 +22,3 @@ $(TARGET): $(OBJECTS)
 
 clean: 
 	-@rm src/*.o $(TARGET)
-
-install: 
-	install -d $(DESTDIR)$(PREFIX)/include/libnetrixclient
-	install -c $(HEADERS) $(DESTDIR)$(PREFIX)/include/libnetrixclient
-	install -d $(DESTDIR)$(PREFIX)/lib
-	install $(TARGET) $(DESTDIR)$(PREFIX)/lib
