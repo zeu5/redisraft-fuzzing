@@ -163,6 +163,13 @@ set_target_properties(hiredis PROPERTIES COMPILE_FLAGS "-w")
 set_target_properties(hiredis_static PROPERTIES COMPILE_FLAGS "-w")
 # ---------------------------- hiredis-end ----------------------------------- #
 
+# ------------------------------ test_network -------------------------------- #
+
+add_subdirectory(deps/test_network)
+set_property(TARGET test_network PROPERTY POSITION_INDEPENDENT_CODE ON)
+
+# ------------------------------ test_network-end ---------------------------- #
+
 # ---------------------------- Dependencies End ------------------------------ #
 
 
@@ -258,7 +265,7 @@ endif ()
 set_property(TARGET redisraft PROPERTY LINK_FLAGS ${LINKER_FLAGS})
 
 target_link_directories(redisraft PUBLIC /usr/local/lib)
-target_link_libraries(redisraft PUBLIC raft hiredis_static m libnetrixclient.so)
+target_link_libraries(redisraft PUBLIC raft hiredis_static test_network_static m libnetrixclient.so)
 if (BUILD_TLS)
     target_link_libraries(redisraft PUBLIC OpenSSL::SSL OpenSSL::Crypto hiredis_ssl_static)
 endif ()
