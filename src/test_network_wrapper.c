@@ -7,8 +7,10 @@
 #include "redisraft.h"
 #include <stdbool.h>
 #include <string.h>
+#include <stdio.h>
 #include <test_network/network.h>
 #include <json-c/json.h>
+#include <unistd.h>
 
 RRStatus TestNetworkInit(RedisRaftCtx* rr, RedisRaftConfig* rc) {
     TestNetworkWrapper* wrapper = malloc(sizeof(TestNetworkWrapper));
@@ -58,11 +60,18 @@ int serializeAEReq(raft_appendentries_req_t *msg, char **out_s) {
     for(int i = 0; i < msg->n_entries; i++) {
         raft_entry_t *e = msg->entries[i];
         json_object *entry = json_object_new_object();
+        char* entry_data;
+        if (e->data_len > 0) {
+            entry_data = malloc(base64EncodeLen(e->data_len));
+            base64Encode(entry_data, e->data, e->data_len);
+        }
+
         json_object_object_add(entry, "term", json_object_new_double((double) e->term));
         json_object_object_add(entry, "id", json_object_new_int((int) e->id));
         json_object_object_add(entry, "session", json_object_new_double((double) e->session));
         json_object_object_add(entry, "type", json_object_new_int((int) e->type));
-        json_object_object_add(entry, "data", json_object_new_string_len(e->data, e->data_len));
+        json_object_object_add(entry, "data", json_object_new_string(entry_data));
+        json_object_object_add(entry, "data_len", json_object_new_int(e->data_len));
         json_object_array_put_idx(entries, i, entry);
     }
     json_object_object_add(out, "entries", entries);
@@ -100,16 +109,27 @@ int deserializeAEReq(char *msg, raft_appendentries_req_t *out) {
     for(int i=0; i < n_entries; i++) {
         json_object* j_entry = json_object_array_get_idx(j_entries, i);
         json_object* j_data = json_object_object_get(j_entry, "data");
-        int data_len = json_object_get_string_len(j_data);
         json_object* j_term = json_object_object_get(j_entry, "term");
         json_object* j_id = json_object_object_get(j_entry, "id");
         json_object* j_session = json_object_object_get(j_entry, "session");
         json_object* j_type = json_object_object_get(j_entry, "type");
+        json_object* j_data_len = json_object_object_get(j_entry, "data_len");
+
+        int data_len = json_object_get_int(j_data_len);
+        char* data = NULL;
+        if (data_len > 0) {
+            char* encoded_data = strdup(json_object_get_string(j_data));
+            data = malloc(base64DecodeLen(encoded_data));
+            base64Decode(data, encoded_data);
+            free(encoded_data);
+        }
 
         raft_entry_t *new_entry = raft_entry_new(data_len);
-        new_entry->data_len = data_len;
-        char *data = strdup(json_object_get_string(j_data));
-        strncpy(new_entry->data, data, data_len);
+        if (data_len > 0) {
+            memcpy(new_entry->data, data, data_len);
+            free(data);
+        }
+
         new_entry->term = (raft_term_t) json_object_get_double(j_term);
         new_entry->id = (raft_entry_id_t) json_object_get_int(j_id);
         new_entry->session = (raft_session_t) json_object_get_double(j_session);
@@ -345,7 +365,7 @@ int handleTestNetworkMessage(TestNetworkWrapper* wrapper, redis_test_message* me
     raft_server_t *me = rr->raft;
     raft_node_t *node = raft_get_node(me, (raft_node_id_t) from_id);
 
-    if (strcmp(message->type, "append_entries_request")) {
+    if (strcmp(message->type, "append_entries_request") == 0) {
         raft_appendentries_req_t req;
         if(deserializeAEReq(message->data, &req) == 0) {
             raft_appendentries_resp_t resp = {0};
@@ -353,12 +373,12 @@ int handleTestNetworkMessage(TestNetworkWrapper* wrapper, redis_test_message* me
                 return testNetworkSendAppendEntriesResponse(rr, &resp, (raft_node_id_t) from_id);
             }
         }
-    } else if(strcmp(message->type, "append_entries_response")) {
+    } else if(strcmp(message->type, "append_entries_response") == 0) {
         raft_appendentries_resp_t req;
         if(deserializeAEResp(message->data, &req) == 0) {
             return raft_recv_appendentries_response(me, node, &req);
         }
-    } else if(strcmp(message->type, "request_vote_request")) {
+    } else if(strcmp(message->type, "request_vote_request") == 0) {
         raft_requestvote_req_t req;
         if(deserializeRVReq(message->data, &req) == 0) {
             raft_requestvote_resp_t resp = {0};
@@ -366,7 +386,7 @@ int handleTestNetworkMessage(TestNetworkWrapper* wrapper, redis_test_message* me
                 return testNetworkSendRequestVoteResponse(rr, &resp, (raft_node_id_t) from_id);
             }
         }
-    } else if(strcmp(message->type, "request_vote_response")) {
+    } else if(strcmp(message->type, "request_vote_response") == 0) {
         raft_requestvote_resp_t req;
         if(deserializeRVResp(message->data, &req) == 0) {
             return raft_recv_requestvote_response(me, node, &req);
@@ -376,6 +396,8 @@ int handleTestNetworkMessage(TestNetworkWrapper* wrapper, redis_test_message* me
 }
 
 void* poll_redis_test_messages(void *arg) {
+    LOG_NOTICE("Test network starting message polling thread");
+
     TestNetworkWrapper *n_wrapper = (TestNetworkWrapper*) arg;
     redis_test_client *n_client = n_wrapper->client;
     while(n_wrapper->signal == 0) {
@@ -386,6 +408,7 @@ void* poll_redis_test_messages(void *arg) {
                 // TODO need to free allocated memory
             }
         }
+        usleep(1);
     }
     return NULL;
 }

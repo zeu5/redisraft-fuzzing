@@ -11,6 +11,7 @@ from types import SimpleNamespace
 import pytest
 from .sandbox import Cluster, Elle, ElleWorker
 from .workload import Workload
+from .fuzzer import Fuzzer
 
 
 def pytest_addoption(parser):
@@ -58,8 +59,32 @@ def pytest_addoption(parser):
         help='number of append/read pairs per transaction')
     parser.addoption(
         '--repeat', action='store',
-        help='Number of times to repeat each test')
+        help='number of times to repeat each test')
+    
+    parser.addoption(
+        '--user-fuzzer', default=False, action='store_true',
+        help="use the fuzzer, runs redis with message interception"
+    )
 
+    parser.addoption(
+        '--fuzzer-server-addr', default="120.0.0.1:7074",
+        help='run with a fuzzer'
+    )
+
+    parser.addoption(
+        '--fuzzer-iterations', default=100,
+        help='number of iterations to run the fuzzer for'
+    )
+
+    parser.addoption(
+        '--fuzzer-mutator', default="",
+        help='mutation strategy to use to run'
+    )
+
+    parser.addoption(
+        '--fuzzer-coverage-path', default="",
+        help='record the coverage'
+    )
 
 def pytest_generate_tests(metafunc):
     if metafunc.config.option.repeat is not None:
@@ -115,6 +140,7 @@ def create_config(pytest_config):
         config.executable = 'valgrind'
 
     # TODO: add fuzzer config options here
+
 
     return config
 
@@ -211,3 +237,13 @@ def workload():
     _workload = Workload()
     yield _workload
     _workload.terminate()
+
+
+@pytest.fixture
+def fuzzer(cluster_factory):
+    _fuzzer = Fuzzer(cluster_factory)
+    _fuzzer.network.run()
+
+    yield _fuzzer
+
+    _fuzzer.network.shutdown()

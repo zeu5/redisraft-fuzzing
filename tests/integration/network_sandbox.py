@@ -1,5 +1,5 @@
 from http import HTTPStatus
-from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler, HTTPServer
+from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 from urllib.parse import urlsplit, parse_qs
 from threading import Lock, Thread
 import requests
@@ -119,11 +119,15 @@ class Message:
         self.msg = msg
         self.id = id
 
-    def from_str(str):
-        m = json.loads(str)
+    def from_str(s):
+        print("Decoding: ", s)
+        m = json.loads(s)
         if "from" not in m or "to" not in m or "type" not in m or "data" not in m:
             return None
         return Message(m["from"], m["to"], m["type"], m["data"], m["id"] if "id" in m else None)
+
+    def to_obj(self):
+        return {"from": self.fr, "to": self.to, "type": self.type, "data": self.msg, "id": self.id}
 
 
 class Network:
@@ -137,6 +141,7 @@ class Network:
         router = Router()
         router.add_route("/replica", self._handle_replica)
         router.add_route("/message", self._handle_message)
+        router.add_route("/event", self._handle_event)
 
         self.server = Server(addr, router)
         self.server_thread = Thread(target=self.server.serve_forever)
@@ -211,21 +216,25 @@ class Network:
         finally:
             self.lock.release()
     
-    def schedule_replica(self, replica):
+    def schedule_replica(self, replica, max_messages):
         addr = ""
         messages_to_deliver = []
         try:
             self.lock.acquire()
             if replica in self.mailboxes and len(self.mailboxes[replica]) > 0:
-                for m in self.mailboxes[replica]:
-                    messages_to_deliver.append(m)
-                self.mailboxes[replica] = []
+                for (i,m) in enumerate(self.mailboxes[replica]):
+                    if i < max_messages:
+                        messages_to_deliver.append(m)
+                if len(self.mailboxes[replica]) > max_messages:
+                    self.mailboxes[replica] = self.mailboxes[replica][max_messages:]
+                else:
+                    self.mailboxes[replica] = []
                 addr = self.replicas[replica]["addr"]
         finally:
             self.lock.release()
 
         for next_msg in messages_to_deliver:
-            requests.post("http://"+addr+"/message", json=json.dumps(next_msg))
+            requests.post("http://"+addr+"/message", json=next_msg.to_obj())
 
     def clear_mailboxes(self):
         try:
@@ -235,3 +244,29 @@ class Network:
             self.event_trace = []
         finally:
             self.lock.release()
+
+
+if __name__ == "__main__":
+    import argparse
+    import sys
+    import time
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument('-b', '--bind', default='127.0.0.1',
+                        help='bind to this address '
+                             '(default: %(default)s)')
+    parser.add_argument('-p', '--port', default=7074, type=int, nargs='?',
+                        help='bind to this port '
+                             '(default: %(default)s)')
+    args = parser.parse_args()
+
+    try:
+        network = Network((args.bind, args.port))
+        network.run()
+        while True:
+            for r in network.get_replicas():
+                network.schedule_replica(r[0], 10)
+            time.sleep(0.01)
+    except KeyboardInterrupt:
+        network.shutdown()
+        sys.exit(0)

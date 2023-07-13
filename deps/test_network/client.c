@@ -6,10 +6,11 @@
 redis_test_http_reply* handle_message(char *body, void* fn_data) {
     redis_test_message* message = redis_test_deserialize_message(body);
     redis_test_client* client = (redis_test_client*) fn_data;
-    redis_test_cdeque_push_back(client->message_queue, message);
+    while(redis_test_cdeque_push_back(client->message_queue, message) != 0);
 
     redis_test_map* params = redis_test_create_map();
     redis_test_map_add(params, "message_id", strdup(message->id));
+
     redis_test_event* e = redis_test_create_event("MessageReceive", params);
     redis_test_send_event(client, e);
     redis_test_free_event(e);
@@ -165,11 +166,12 @@ long redis_test_send_event(redis_test_client* c, redis_test_event* event) {
 }
 
 bool redis_test_have_message(redis_test_client* c) {
-    return redis_test_cdeque_size(c->message_queue) == 0;
+    return redis_test_cdeque_size(c->message_queue) > 0;
 }
 
 redis_test_message* redis_test_receive_message(redis_test_client* c) {
     void* val = redis_test_cdeque_pop_front(c->message_queue);
+
     if (val != NULL) {
         return (redis_test_message*) val;
     }

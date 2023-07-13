@@ -2,6 +2,7 @@
 #include <stddef.h>
 #include <string.h>
 #include <stdint.h>
+#include <stdio.h>
 #include <json-c/json.h>
 #include <time.h>
 
@@ -30,7 +31,6 @@ char* redis_test_serialize_message(redis_test_message* message) {
 }
 
 redis_test_message* redis_test_deserialize_message(char* message_s) {
-    // TODO: Need to do error handling when parsing
     json_object* obj = json_tokener_parse(message_s);
     if (obj == NULL) {
         return NULL;

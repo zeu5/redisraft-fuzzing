@@ -12,7 +12,10 @@ from enum import Enum
 import pytest
 from redis import ResponseError
 from .workload import MultiWithLargeReply, MonotonicIncrCheck
+from .fuzzer import Fuzzer
 
+def test_fuzzing_with_fuzzer(fuzzer: Fuzzer):
+    fuzzer.run()
 
 def test_fuzzing_with_restarts(cluster):
     """
@@ -28,6 +31,7 @@ def test_fuzzing_with_restarts(cluster):
         logging.info('---------- Executed INCRBY # %s', i)
         if i % 7 == 0:
             r = random.randint(1, nodes)
+            cluster.node(r).info()
             logging.info('********** Restarting node %s **********', r)
             cluster.node(r).restart()
             cluster.node(r).wait_for_election()

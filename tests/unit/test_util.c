@@ -62,8 +62,32 @@ static void test_parse_slots()
     }
 }
 
+static void test_base64_encode()
+{
+    char* test_str = "test";
+    char *expected = "dGVzdA==";
+    char *enc;
+    char *dec;
+
+    size_t out_size = base64EncodeLen(strlen(test_str));
+    enc = malloc(out_size);
+    base64Encode(enc, test_str, strlen(test_str));
+
+    assert(strcmp(enc, expected) == 0);
+
+    size_t dec_len = base64DecodeLen(enc);
+    dec = malloc(dec_len);
+    int dec_size = base64Decode(dec, enc);
+
+    assert(dec_size == strlen(test_str));
+
+    assert(strcmp(dec, test_str) == 0);
+
+}
+
 void test_util()
 {
     test_run(test_raftreq_str);
     test_run(test_parse_slots);
+    test_run(test_base64_encode);
 }

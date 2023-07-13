@@ -96,7 +96,9 @@ void connection_handler(struct mg_connection *c, int ev, void *ev_data, void *fn
         handler_data->fn_data = server->fn_data;
         handler_data->handler = handler;
         handler_data->queue = redis_test_create_deque();
-        char* body = redis_test_strndup(http_msg->body.ptr, http_msg->body.len);
+        char *body = malloc(http_msg->body.len+1);
+        memcpy(body, http_msg->body.ptr, http_msg->body.len);
+        body[http_msg->body.len] = '\0';
         handler_data->body = body;
 
         start_handler_thread(handler_data);

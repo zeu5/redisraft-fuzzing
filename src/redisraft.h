@@ -895,6 +895,10 @@ int fsyncFile(int fd);
 int fsyncFileAt(const char *path);
 void fsyncDir(const char *path);
 int syncRename(const char *oldname, const char *newname);
+int base64DecodeLen(const char *bufcoded);
+int base64Decode(char *bufplain, const char *bufcoded);
+int base64EncodeLen(int len);
+int base64Encode(char *encoded, const char *string, int len);
 
 /* config.c */
 RRStatus ConfigInit(RedisModuleCtx *ctx, RedisRaftConfig *c);

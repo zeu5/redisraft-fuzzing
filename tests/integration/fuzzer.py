@@ -1,8 +1,11 @@
-from network_sandbox import Network
+from .network_sandbox import Network
 from types import SimpleNamespace
 import random
 import json
 import requests
+import logging
+
+LOG = logging.getLogger('fuzzer')
 
 class DefaultMutator:
     def __init__(self) -> None:
@@ -22,26 +25,31 @@ class TLCGuider:
     def check_new_state(self, trace, event_trace):
         trace_to_send = event_trace
         trace_to_send.append({"reset": True})
-        r = requests.post("http://"+self.tlc_addr+"/execute", json=json.dumps(trace_to_send))
-        if r.ok:
-            response = r.json()
-            have_new = False
-            for i in range(len(response["states"])):
-                tlc_state = {"state": response["states"][i], "key" : response["keys"][i]}
-                if tlc_state["key"] not in self.states:
-                    self.states[tlc_state["key"]] = tlc_state
-                    have_new = True
-            return have_new
-        return False
+        try:
+            breakpoint()
+            r = requests.post("http://"+self.tlc_addr+"/execute", json=json.dumps(trace_to_send))
+            if r.ok:
+                response = r.json()
+                have_new = False
+                for i in range(len(response["states"])):
+                    tlc_state = {"state": response["states"][i], "key" : response["keys"][i]}
+                    if tlc_state["key"] not in self.states:
+                        self.states[tlc_state["key"]] = tlc_state
+                        have_new = True
+                return have_new
+        except:
+            pass
+        finally:
+            return False
     
 
 class Fuzzer:
-    def __init__(self, cluster, config = {}) -> None:
+    def __init__(self, cluster_factory, config = {}) -> None:
         self.config = self._validate_config(config)
         self.network = Network(self.config.network_addr)
         self.guider = self.config.guider
         self.mutator = self.config.mutator
-        self.cluster = cluster
+        self.cluster_factory = cluster_factory
         self.trace_queue = []
 
     def _validate_config(self, config):
@@ -64,10 +72,10 @@ class Fuzzer:
         else:
             new_config.guider = config["guider"]
 
-        if "no_iterations" not in config:
-            new_config.no_iterations = 100
+        if "iterations" not in config:
+            new_config.iterations = 10
         else:
-            new_config.no_iterations = 100
+            new_config.iterations = config["iterations"]
 
         if "horizon" not in config:
             new_config.horizon = 50
@@ -99,28 +107,38 @@ class Fuzzer:
         else:
             new_config.test_harness = config["test_harness"]
 
+        if "max_message_to_schedule" not in config:
+            new_config.max_messages_to_schedule = 6
+        else:
+            new_config.max_messages_to_schedule = config["max_messages_to_schedule"]
+
         return new_config
 
     def run(self):
-        self.network.run()
-
+        LOG.info("Creating initial population")
         for i in range(self.config.init_population):
+            LOG.info("Initial population iteration %d", i)
             (trace, event_trace) = self.run_iteration()
             for j in range(self.config.mutations_per_trace):
                 self.trace_queue.append(self.mutator.mutate(trace))
 
-        for i in range(self.config.no_iterations):
+        LOG.info("Starting main fuzzer loop")
+        for i in range(self.config.iterations):
+            LOG.info("Starting fuzzer iteration %d", i)
             to_mimic = None
             if len(self.trace_queue) > 0:
                 to_mimic = self.trace_queue.pop(0)
-            (trace, event_trace) = self.run_iteration(to_mimic)
-            if self.guider.check_new_state(trace, event_trace):
-                for j in range(self.config.mutations_per_trace):
-                    self.trace_queue.append(self.mutator.mutate(trace))
-
+            try:
+                (trace, event_trace) = self.run_iteration(to_mimic)
+            except Exception as ex:
+                breakpoint()
+                LOG.info("Error running iteration %d: %s", i, ex)
+            else:
+                if self.guider.check_new_state(trace, event_trace):
+                    for j in range(self.config.mutations_per_trace):
+                        self.trace_queue.append(self.mutator.mutate(trace))
+                
         # TODO: plot coverage
-
-        self.network.shutdown()
 
     def run_iteration(self, mimic = None):
         trace = []
@@ -135,51 +153,57 @@ class Fuzzer:
                 crash_points[c] = random.choice(node_ids)
 
             client_requests = random.sample(range(self.config.horizon), self.config.test_harness)
-            
-            for i in range(self.config.horizon):
-                schedule.append(random.choice(node_ids))
+            schedule = random.choices(node_ids, k=self.config.horizon)
         else:
-            schedule = [0 for i in range(self.config.horizon)]
+            schedule = [1 for i in range(self.config.horizon)]
             for ch in mimic:
                 if ch["type"] == "Crash":
-                    crash_points[ch["node"]] = ch["step"]
+                    crash_points[ch["step"]] = ch["node"]
                 elif ch["type"] == "Schedule":
                     schedule[ch["step"]] = ch["node"]
                 elif ch["type"] == "ClientRequest":
                     client_requests.append(ch["step"])
 
+        cluster = self.cluster_factory()
 
-        self.cluster.create(self.config.nodes)
-        for i in range(self.config.horizon):
-            if crashed is not None:
-                self.cluster.node(crashed).start()
-                self.network.add_event({"name": "Add", "params": {"i": crashed}})
-                crashed = None
-            
-            if i in crash_points:
-                node_id = crash_points[i]
-                crashed = node_id
-                self.cluster.node(node_id).terminate()
-                trace.append({"type": "Crash", "node": node_id, "step": i})
-                self.network.add_event({"name": "Remove", "params": {"i": node_id}})
-            
-            for node_id in self.cluster.node_ids():
-                state = self.cluster.node(node_id).info()['raft_role']
-                self.network.add_event({"name": "UpdateState", "params": {"state": state}})
-            
-            self.network.schedule_replica(schedule[i])
-            trace.append({"type": "Schedule", "node": schedule[i], "step": i})
-
-            if i in client_requests:
-                assert self.cluster.execute('INCRBY', 'counter', 1) == i + 1
-                trace.append({"type": "ClientRequest", "step": i})
+        LOG.debug("Creating cluster")
+        cluster.create(self.config.nodes)
+        try:
+            for i in range(self.config.horizon):
+                if crashed is not None:
+                    cluster.node(crashed).start()
+                    self.network.add_event({"name": "Add", "params": {"i": crashed}})
+                    crashed = None
                 
-        
-        assert int(self.cluster.execute('GET', 'counter')) == self.config.horizon
-        self.cluster.destroy()
+                if i in crash_points:
+                    node_id = crash_points[i]
+                    crashed = node_id
+                    if node_id not in cluster.node_ids():
+                        breakpoint()
+                    else:
+                        cluster.node(node_id).terminate()
+                    trace.append({"type": "Crash", "node": node_id, "step": i})
+                    self.network.add_event({"name": "Remove", "params": {"i": node_id}})
+                
+                for node_id in cluster.node_ids():
+                    if node_id != crashed:
+                        state = cluster.node(node_id).info()['raft_role']
+                        self.network.add_event({"name": "UpdateState", "params": {"state": state}})
+
+                self.network.schedule_replica(schedule[i], random.randint(0, self.config.max_messages_to_schedule))
+                trace.append({"type": "Schedule", "node": schedule[i], "step": i})
+
+                if i in client_requests:
+                    cluster.execute('INCRBY', 'counter', 1)
+                    trace.append({"type": "ClientRequest", "step": i})
+                    
+            
+            assert int(cluster.execute('GET', 'counter')) == len(client_requests)
+        finally:
+            LOG.debug("Destroying cluster")
+            cluster.destroy()
 
         event_trace = self.network.get_event_trace()
         self.network.clear_mailboxes()
 
         return (trace, event_trace)
-        

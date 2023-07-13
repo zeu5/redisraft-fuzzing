@@ -196,7 +196,9 @@ void redis_test_free_deque(redis_test_deque* d) {
 }
 
 int redis_test_cdeque_insert(redis_test_deque* d, void* elem, int pos) {
-    if(pthread_mutex_lock(&d->mutex) != 0) {
+    int lock_out = pthread_mutex_lock(&d->mutex);
+    if (lock_out != 0) {
+        printf("Error locking the thread: %d", lock_out);
         return -1;
     }
     redis_test_deque_insert(d, elem, pos);
@@ -204,8 +206,10 @@ int redis_test_cdeque_insert(redis_test_deque* d, void* elem, int pos) {
 }
 
 void* redis_test_cdeque_remove(redis_test_deque* d, int pos) {
-    if(pthread_mutex_lock(&d->mutex) != 0) {
-        return NULL;
+    int lock_out = pthread_mutex_lock(&d->mutex);
+    if (lock_out != 0) {
+        printf("Error locking the thread: %d", lock_out);
+        return -1;
     }
     void* ret = redis_test_deque_remove(d, pos);
     pthread_mutex_unlock(&d->mutex);
@@ -230,19 +234,15 @@ void* redis_test_cdeque_pop_back(redis_test_deque* d) {
 }
 
 void* redis_test_cdeque_get(redis_test_deque* d, int pos) {
-    if(pthread_mutex_lock(&d->mutex) != 0) {
-        return NULL;
-    }
+    pthread_mutex_lock(&d->mutex);
     void* ret = redis_test_deque_get(d, pos);
     pthread_mutex_unlock(&d->mutex);
     return ret;
 }
 
 int redis_test_cdeque_size(redis_test_deque* d) {
-    if(pthread_mutex_lock(&d->mutex) != 0) {
-        return -1;
-    }
-    int size = redis_test_deque_size(d);
+    pthread_mutex_lock(&d->mutex);
+    int size = d->size;
     pthread_mutex_unlock(&d->mutex);
     return size;
 }
