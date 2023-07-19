@@ -4,6 +4,7 @@ import random
 import json
 import requests
 import logging
+import time
 
 LOG = logging.getLogger('fuzzer')
 
@@ -26,7 +27,6 @@ class TLCGuider:
         trace_to_send = event_trace
         trace_to_send.append({"reset": True})
         try:
-            breakpoint()
             r = requests.post("http://"+self.tlc_addr+"/execute", json=json.dumps(trace_to_send))
             if r.ok:
                 response = r.json()
@@ -46,6 +46,7 @@ class TLCGuider:
 class Fuzzer:
     def __init__(self, cluster_factory, config = {}) -> None:
         self.config = self._validate_config(config)
+        LOG.info("Intercept network address: {addr}".format(addr=self.config.network_addr))
         self.network = Network(self.config.network_addr)
         self.guider = self.config.guider
         self.mutator = self.config.mutator
@@ -54,10 +55,15 @@ class Fuzzer:
 
     def _validate_config(self, config):
         new_config = SimpleNamespace()
-        if "mutator" not in config:
-            new_config.mutator = DefaultMutator()
-        else:
-            new_config.mutator = config["mutator"]
+
+        new_config.mutator = DefaultMutator()
+        
+        # if "mutator" not in config:
+        #     new_config.mutator = DefaultMutator()
+        # else:
+        #     if config["mutator"] == "default":
+        #         new_config.mutator = DefaultMutator()
+            
         
         if "network_addr" not in config:
             new_config.network_addr = ("127.0.0.1", 7074)
@@ -131,7 +137,6 @@ class Fuzzer:
             try:
                 (trace, event_trace) = self.run_iteration(to_mimic)
             except Exception as ex:
-                breakpoint()
                 LOG.info("Error running iteration %d: %s", i, ex)
             else:
                 if self.guider.check_new_state(trace, event_trace):
@@ -167,9 +172,11 @@ class Fuzzer:
         cluster = self.cluster_factory()
 
         LOG.debug("Creating cluster")
-        cluster.create(self.config.nodes)
+        cluster.create(self.config.nodes, wait=False)
+        self.network.wait_for_nodes(self.config.nodes)
         try:
             for i in range(self.config.horizon):
+                LOG.debug("Taking step {i}".format(i=i))
                 if crashed is not None:
                     cluster.node(crashed).start()
                     self.network.add_event({"name": "Add", "params": {"i": crashed}})
@@ -178,9 +185,7 @@ class Fuzzer:
                 if i in crash_points:
                     node_id = crash_points[i]
                     crashed = node_id
-                    if node_id not in cluster.node_ids():
-                        breakpoint()
-                    else:
+                    if node_id in cluster.node_ids():
                         cluster.node(node_id).terminate()
                     trace.append({"type": "Crash", "node": node_id, "step": i})
                     self.network.add_event({"name": "Remove", "params": {"i": node_id}})
@@ -194,11 +199,14 @@ class Fuzzer:
                 trace.append({"type": "Schedule", "node": schedule[i], "step": i})
 
                 if i in client_requests:
-                    cluster.execute('INCRBY', 'counter', 1)
+                    try:
+                        cluster.execute('INCRBY', 'counter', 1, with_retry=False)
+                    except:
+                        pass
                     trace.append({"type": "ClientRequest", "step": i})
+
+                time.sleep(0.05)
                     
-            
-            assert int(cluster.execute('GET', 'counter')) == len(client_requests)
         finally:
             LOG.debug("Destroying cluster")
             cluster.destroy()

@@ -1,9 +1,13 @@
 from http import HTTPStatus
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
+from typing import Any
 from urllib.parse import urlsplit, parse_qs
 from threading import Lock, Thread
 import requests
 import json
+import logging
+
+LOG = logging.getLogger('fuzzer-network')
 
 class Request:
     def __init__(self, method, path, headers, query=None, content=None) -> None:
@@ -62,6 +66,9 @@ class _ServerHandler(BaseHTTPRequestHandler):
                 self.wfile.write(content)
 
             return
+    
+    def log_message(self, format: str, *args: Any) -> None:
+       return
 
     def do_GET(self):
         (_, _, path, query, _) = urlsplit(self.path)
@@ -120,7 +127,6 @@ class Message:
         self.id = id
 
     def from_str(s):
-        print("Decoding: ", s)
         m = json.loads(s)
         if "from" not in m or "to" not in m or "type" not in m or "data" not in m:
             return None
@@ -154,30 +160,35 @@ class Network:
         self.server_thread.join()
     
     def _handle_replica(self, request: Request) -> Response:
+        LOG.debug("Received replica: {}".format(request.content))
         replica = json.loads(request.content)
         if "id" in replica:
             try:
                 self.lock.acquire()
-                self.replicas[replica["id"]] = replica
+                replica_id = int(replica["id"])
+                self.replicas[replica_id] = replica
             finally:
                 self.lock.release()
 
         return Response.json(HTTPStatus.OK, json.dumps({"message": "Ok"}))
 
     def _handle_message(self, request: Request) -> Response:
+        LOG.info("Received message: {}".format(request.content))
         msg = Message.from_str(request.content)
         if msg is not None:
             try:
                 self.lock.acquire()
-                if msg.to not in self.mailboxes:
-                    self.mailboxes[msg.to] = []
-                self.mailboxes[msg.to].append(msg)
+                mailbox_key = int(msg.to)
+                if mailbox_key not in self.mailboxes:
+                    self.mailboxes[mailbox_key] = []
+                self.mailboxes[mailbox_key].append(msg)
             finally:
                 self.lock.release()
 
         return Response.json(HTTPStatus.OK, json.dumps({"message": "Ok"}))
     
     def _handle_event(self, request: Request) -> Response:
+        LOG.info("Received event: {}".format(request.content))
         event = json.loads(request.content)
         if "replica" in event:
             try:
@@ -189,6 +200,19 @@ class Network:
                 self.lock.release()
 
         return Response.json(HTTPStatus.OK, json.dumps({"message": "Ok"}))
+
+    def wait_for_nodes(self, no_nodes):
+        while True:
+            done = False
+            try:
+                self.lock.acquire()
+                if len(list(self.replicas.keys())) == no_nodes:
+                    done = True
+            finally:
+                self.lock.release()
+            if done:
+                break
+            time.sleep(0.05)
     
     def get_replicas(self):
         replicas = []
@@ -234,6 +258,8 @@ class Network:
             self.lock.release()
 
         for next_msg in messages_to_deliver:
+            msg_s = json.dumps(next_msg.to_obj())
+            LOG.info("Sending message: {}".format(msg_s))
             requests.post("http://"+addr+"/message", json=next_msg.to_obj())
 
     def clear_mailboxes(self):
@@ -242,6 +268,7 @@ class Network:
             for key in self.mailboxes:
                 self.mailboxes[key] = []
             self.event_trace = []
+            self.replicas = {}
         finally:
             self.lock.release()
 

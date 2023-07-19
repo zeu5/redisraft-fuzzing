@@ -60,14 +60,22 @@ def pytest_addoption(parser):
     parser.addoption(
         '--repeat', action='store',
         help='number of times to repeat each test')
+    parser.addoption(
+        '--raft-request-timeout', default=200,
+        help="raft request timeout value"
+    )
+    parser.addoption(
+        '--raft-election-timeout', default=1000,
+        help="raft election timeout value"
+    )
     
     parser.addoption(
-        '--user-fuzzer', default=False, action='store_true',
+        '--use-fuzzer', default=False, action='store_true',
         help="use the fuzzer, runs redis with message interception"
     )
 
     parser.addoption(
-        '--fuzzer-server-addr', default="120.0.0.1:7074",
+        '--fuzzer-server-addr', default="127.0.0.1:7074",
         help='run with a fuzzer'
     )
 
@@ -125,6 +133,8 @@ def create_config(pytest_config):
     config.elle_cli = os.path.abspath(pytest_config.getoption('--elle-cli'))
     config.elle_threads = int(pytest_config.getoption('--elle-threads'))
     config.elle_num_ops = int(pytest_config.getoption('--elle-ops-per-tx'))
+    config.raft_request_timeout = int(pytest_config.getoption('--raft-request-timeout'))
+    config.raft_election_timeout = int(pytest_config.getoption('--raft-election-timeout'))
 
     if pytest_config.getoption('--valgrind'):
         if config.args is None:
@@ -140,7 +150,22 @@ def create_config(pytest_config):
         config.executable = 'valgrind'
 
     # TODO: add fuzzer config options here
-
+    config.intercept = pytest_config.getoption('--use-fuzzer')
+    config.fuzzer_config = {}
+    addr_str = pytest_config.getoption('--fuzzer-server-addr')
+    if len(addr_str.split(":")) == 2:
+        s = addr_str.split(":")
+        hostname = s[0]
+        port = 7074
+        try:
+            port = int(s[1])
+        except:
+            pass
+        config.fuzzer_config["network_addr"] = (hostname, port)
+    
+    config.fuzzer_config["iterations"] = pytest_config.getoption('--fuzzer-iterations')
+    config.fuzzer_config["mutator"] = pytest_config.getoption('--fuzzer-mutator')
+    config.fuzzer_config["coverage_store_path"] = pytest_config.getoption('--fuzzer-coverage-path')
 
     return config
 
@@ -240,8 +265,9 @@ def workload():
 
 
 @pytest.fixture
-def fuzzer(cluster_factory):
-    _fuzzer = Fuzzer(cluster_factory)
+def fuzzer(request, cluster_factory):
+    _config = create_config(request.config)
+    _fuzzer = Fuzzer(cluster_factory, _config.fuzzer_config)
     _fuzzer.network.run()
 
     yield _fuzzer

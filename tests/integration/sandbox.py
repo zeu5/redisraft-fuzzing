@@ -112,6 +112,16 @@ class RedisRaft(object):
                       '--dir', self.serverdir,
                       '--dbfilename', self._dbfilename,
                       '--loglevel', config.raft_loglevel]
+        
+        if config.intercept:
+            server_addr = config.fuzzer_config['network_addr']
+            intercept_args = [
+                '--raft.use-test-network', "yes",
+                '--raft.test-network-server-addr', server_addr[0]+":"+str(server_addr[1]),
+                '--raft.test-network-listen-addr', "127.0.0.1:"+str(2023+_id)
+            ]
+            self.args += intercept_args
+
         if password:
             self.args += ['--requirepass', password]
 
@@ -143,6 +153,12 @@ class RedisRaft(object):
             raft_args = {}
         else:
             raft_args = raft_args.copy()
+
+        if config.raft_request_timeout:
+            raft_args["request-timeout"] = config.raft_request_timeout
+        
+        if config.raft_election_timeout:
+            raft_args["election-timeout"] = config.raft_election_timeout
 
         if password:
             raft_args['cluster-password'] = password
@@ -608,7 +624,7 @@ class Cluster(object):
         return [n.address for n in self.nodes.values()]
 
     def create(self, node_count, raft_args=None, cluster_id=None,
-               password=None, prepopulate_log=0, cacert_type=None):
+               password=None, prepopulate_log=0, cacert_type=None, wait=True):
         if raft_args is None:
             raft_args = {}
         self.raft_args = raft_args.copy()
@@ -629,8 +645,9 @@ class Cluster(object):
                 node.join(['localhost:{}'.format(self.base_port + 1)])
 
         self.leader = 1
-        self.node(1).wait_for_num_voting_nodes(len(self.nodes))
-        self.wait_for_unanimity()
+        if wait:
+            self.node(1).wait_for_num_voting_nodes(len(self.nodes))
+            self.wait_for_unanimity()
 
         # Pre-populate if asked
         for _ in range(prepopulate_log):
@@ -809,11 +826,13 @@ class Cluster(object):
                     raise
         raise RedisRaftError('No leader elected')
 
-    def execute(self, *cmd):
+    def execute(self, *cmd, with_retry=True):
         """
         Execute the specified command on the leader node; Handle redirects
         and retries as necessary.
         """
+        if not with_retry:
+            return self.nodes[self.leader].client.execute_command(*cmd)
 
         def _func():
             return self.nodes[self.leader].client.execute_command(*cmd)
