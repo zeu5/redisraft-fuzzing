@@ -125,6 +125,7 @@ class Message:
         self.type = type
         self.msg = msg
         self.id = id
+        self.parsed_message = json.loads(msg)
 
     def from_str(s):
         m = json.loads(s)
@@ -171,9 +172,51 @@ class Network:
                 self.lock.release()
 
         return Response.json(HTTPStatus.OK, json.dumps({"message": "Ok"}))
+    
+    def _get_message_event_params(self, msg):
+        if msg.type == "append_entries_request":
+            return {
+                "type": "MsgApp",
+                "term": msg.parsed_message["term"],
+                "from": msg.fr,
+                "to": msg.to,
+                "log_term": msg.parsed_message["prev_log_term"], 
+                "entries": [{"Term": e["term"], "Data": e["data"].encode("utf-8")} for e in msg.parsed_message["entries"] if e["data"] != ""],
+                "index": msg.parsed_message["prev_log_idx"],
+                "commit": msg.parsed_message["leader_commit"],
+                "reject": False,
+            }
+        elif msg.type == "append_entries_response":
+            return {
+                "type": "MsgAppResp",
+                "term": msg.parsed_message["term"],
+                "from": msg.fr,
+                "to": msg.to,
+                "log_term": 0, 
+                "entries": [],
+                "index": msg.parsed_message["current_idx"],
+                "commit": 0,
+                "reject": True if msg.parsed_message["success"] == 1 else False,
+            }
+        elif msg.type == "request_vote_request":
+            return {
+                "type": "MsgVote",
+                "term": msg.parsed_message["term"],
+                "from": msg.fr,
+                "to": msg.to,
+                "log_term": 0, 
+                "entries": [],
+                "index": msg.parsed_message["current_idx"],
+                "commit": 0,
+                "reject": True if msg.parsed_message["success"] == 1 else False,
+            }
+            return "MsgVote"
+        elif msg.type == "request_vote_response":
+            return "MsgVoteResp"
+        return ""
 
     def _handle_message(self, request: Request) -> Response:
-        LOG.info("Received message: {}".format(request.content))
+        LOG.debug("Received message: {}".format(request.content))
         msg = Message.from_str(request.content)
         if msg is not None:
             try:
@@ -184,11 +227,12 @@ class Network:
                 self.mailboxes[mailbox_key].append(msg)
             finally:
                 self.lock.release()
+            self.add_event({"name": "SendMessage", "params": self._get_message_event_params(msg)})
 
         return Response.json(HTTPStatus.OK, json.dumps({"message": "Ok"}))
     
     def _handle_event(self, request: Request) -> Response:
-        LOG.info("Received event: {}".format(request.content))
+        LOG.debug("Received event: {}".format(request.content))
         event = json.loads(request.content)
         if "replica" in event:
             try:
@@ -259,8 +303,12 @@ class Network:
 
         for next_msg in messages_to_deliver:
             msg_s = json.dumps(next_msg.to_obj())
-            LOG.info("Sending message: {}".format(msg_s))
-            requests.post("http://"+addr+"/message", json=next_msg.to_obj())
+            LOG.debug("Sending message: {}".format(msg_s))
+            self.add_event({"name": "DeliverMessage", "params": self._get_message_event_params(next_msg)})
+            try:
+                requests.post("http://"+addr+"/message", json=next_msg.to_obj())
+            except:
+                pass
 
     def clear_mailboxes(self):
         try:

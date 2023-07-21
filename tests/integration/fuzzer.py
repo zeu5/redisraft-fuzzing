@@ -158,14 +158,16 @@ class Fuzzer:
                 crash_points[c] = random.choice(node_ids)
 
             client_requests = random.sample(range(self.config.horizon), self.config.test_harness)
-            schedule = random.choices(node_ids, k=self.config.horizon)
+            for choice in random.choices(node_ids, k=self.config.horizon):
+                max_messages = random.randint(0, self.config.max_messages_to_schedule)
+                schedule.append((choice, max_messages))
         else:
             schedule = [1 for i in range(self.config.horizon)]
             for ch in mimic:
                 if ch["type"] == "Crash":
                     crash_points[ch["step"]] = ch["node"]
                 elif ch["type"] == "Schedule":
-                    schedule[ch["step"]] = ch["node"]
+                    schedule[ch["step"]] = (ch["node"], ch["max_messages"])
                 elif ch["type"] == "ClientRequest":
                     client_requests.append(ch["step"])
 
@@ -195,8 +197,8 @@ class Fuzzer:
                         state = cluster.node(node_id).info()['raft_role']
                         self.network.add_event({"name": "UpdateState", "params": {"state": state}})
 
-                self.network.schedule_replica(schedule[i], random.randint(0, self.config.max_messages_to_schedule))
-                trace.append({"type": "Schedule", "node": schedule[i], "step": i})
+                self.network.schedule_replica(schedule[i][0], schedule[i][1])
+                trace.append({"type": "Schedule", "node": schedule[i][0], "step": i, "max_messages": schedule[i][1]})
 
                 if i in client_requests:
                     try:

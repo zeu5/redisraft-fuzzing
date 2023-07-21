@@ -60,7 +60,7 @@ int serializeAEReq(raft_appendentries_req_t *msg, char **out_s) {
     for(int i = 0; i < msg->n_entries; i++) {
         raft_entry_t *e = msg->entries[i];
         json_object *entry = json_object_new_object();
-        char* entry_data;
+        char* entry_data = NULL;
         if (e->data_len > 0) {
             entry_data = malloc(base64EncodeLen(e->data_len));
             base64Encode(entry_data, e->data, e->data_len);
@@ -70,7 +70,11 @@ int serializeAEReq(raft_appendentries_req_t *msg, char **out_s) {
         json_object_object_add(entry, "id", json_object_new_int((int) e->id));
         json_object_object_add(entry, "session", json_object_new_double((double) e->session));
         json_object_object_add(entry, "type", json_object_new_int((int) e->type));
-        json_object_object_add(entry, "data", json_object_new_string(entry_data));
+        if (e->data_len > 0) {
+            json_object_object_add(entry, "data", json_object_new_string(entry_data));
+        } else {
+            json_object_object_add(entry, "data", json_object_new_string(""));
+        }
         json_object_object_add(entry, "data_len", json_object_new_int(e->data_len));
         json_object_array_put_idx(entries, i, entry);
     }

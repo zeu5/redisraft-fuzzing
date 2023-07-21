@@ -282,7 +282,7 @@ redis_test_string* redis_test_string_append(redis_test_string* s, char* str) {
 
 redis_test_string* redis_test_string_appendn(redis_test_string* s, char* str, size_t n) {
     char* s_cpy = malloc(n);
-    strncpy(s_cpy, str, n);
+    memcpy(s_cpy, str, n);
     s = redis_test_string_append(s, s_cpy);
     free(s_cpy);
     return s;
@@ -294,8 +294,8 @@ size_t redis_test_string_len(redis_test_string* s) {
 
 char* redis_test_string_str(redis_test_string* s) {
     char* resp = malloc(s->len+1);
-    strncpy(resp, s->ptr, s->len);
-    resp[s->len+1] = '\0';
+    memcpy(resp, s->ptr, s->len);
+    resp[s->len] = '\0';
     return resp;
 }
 

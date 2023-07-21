@@ -8,13 +8,13 @@ redis_test_http_reply* handle_message(char *body, void* fn_data) {
     redis_test_client* client = (redis_test_client*) fn_data;
     while(redis_test_cdeque_push_back(client->message_queue, message) != 0);
 
-    redis_test_map* params = redis_test_create_map();
-    redis_test_map_add(params, "message_id", strdup(message->id));
+    // redis_test_map* params = redis_test_create_map();
+    // redis_test_map_add(params, "message_id", strdup(message->id));
 
-    redis_test_event* e = redis_test_create_event("MessageReceive", params);
-    redis_test_send_event(client, e);
-    redis_test_free_event(e);
-    redis_test_free_map(params);
+    // redis_test_event* e = redis_test_create_event("MessageReceive", params);
+    // redis_test_send_event(client, e);
+    // redis_test_free_event(e);
+    // redis_test_free_map(params);
 
     redis_test_http_reply* reply = redis_test_http_create_reply();
     reply->body = "OK";
@@ -97,14 +97,14 @@ char* get_message_id(redis_test_client* c, char* from, char* to) {
     redis_test_string_append(key, to);
 
     if(!redis_test_map_exists(c->message_counter, redis_test_string_str(key))) {
-        int *count_ptr = malloc(sizeof(int));
+        int* count_ptr = malloc(sizeof(int));
         *count_ptr = 0;
         redis_test_map_add(c->message_counter, redis_test_string_str(key), count_ptr);
     }
 
-    int *count_ptr = (int *) redis_test_map_get(c->message_counter, redis_test_string_str(key));
+    int* count_ptr = (int*) redis_test_map_get(c->message_counter, redis_test_string_str(key));
     int count = *count_ptr;
-    *count_ptr = *count_ptr + 1;
+    *count_ptr = count + 1;
     redis_test_map_add(c->message_counter, redis_test_string_str(key), count_ptr);
 
     char count_s[12];
@@ -122,12 +122,12 @@ long redis_test_send_message(redis_test_client* c, redis_test_message* message) 
     message->from = strdup(c->config.id);
     message->id = get_message_id(c, message->from, message->to);
 
-    redis_test_map* params = redis_test_create_map();
-    redis_test_map_add(params, "message_id", strdup(message->id));
-    redis_test_event* e = redis_test_create_event("MessageSend", params);
-    redis_test_send_event(c, e);
-    redis_test_free_event(e);
-    redis_test_free_map(params);
+    // redis_test_map* params = redis_test_create_map();
+    // redis_test_map_add(params, "message_id", strdup(message->id));
+    // redis_test_event* e = redis_test_create_event("MessageSend", params);
+    // redis_test_send_event(c, e);
+    // redis_test_free_event(e);
+    // redis_test_free_map(params);
 
     redis_test_string* addr = redis_test_create_string(NULL);
     redis_test_string_append(addr, "http://");
