@@ -18,6 +18,7 @@ import typing
 import uuid
 import shutil
 from typing import List
+from concurrent.futures import ThreadPoolExecutor
 
 import redis
 from redis import ResponseError
@@ -611,6 +612,7 @@ class Cluster(object):
         self.leader = None
         self.raft_args = None
         self.config = config
+        self.thread_pool = ThreadPoolExecutor(max_workers=5)
 
     def nodes_count(self):
         return len(self.nodes)
@@ -847,6 +849,16 @@ class Cluster(object):
         def _func():
             return self.nodes[self.leader].client.execute_command(*cmd)
         return self.raft_retry(_func)
+    
+    def execute_async(self, *cmd, with_retry=True):
+        def _func():
+            return self.nodes[self.leader].client.execute_command(*cmd)
+        target = self.raft_retry
+        args = (_func)
+        if not with_retry:
+            target = self.nodes[self.leader].client.execute_command
+            args = cmd
+        self.thread_pool.submit(target, *args)
 
     def destroy(self):
         err = None
@@ -856,6 +868,7 @@ class Cluster(object):
                 node.destroy()
             except RedisRaftBug as e:
                 err = e
+        self.thread_pool.shutdown(wait=False, cancel_futures=True)
         if err:
             raise err
 
@@ -866,8 +879,10 @@ class Cluster(object):
                 node.terminate()
             except RedisRaftBug as e:
                 err = e
+        self.thread_pool.shutdown(wait=False, cancel_futures=True)
         if err:
             raise err
+        
 
     def start(self):
         for node in self.nodes.values():

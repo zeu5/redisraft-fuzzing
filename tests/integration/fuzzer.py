@@ -267,21 +267,24 @@ class Fuzzer:
         self.network.wait_for_nodes(self.config.nodes)
         try:
             for i in range(self.config.horizon):
-                LOG.debug("Taking step {i}".format(i=i))
+                LOG.debug("Taking step {}".format(i))
                 if crashed is not None:
+                    LOG.debug("Starting crashed node")
                     cluster.node(crashed).start()
                     self.network.add_event({"name": "Add", "params": {"i": crashed}})
                     crashed = None
                 
                 if i in crash_points:
+                    LOG.debug("Crashing node")
                     node_id = crash_points[i]
                     crashed = node_id
                     if node_id in cluster.node_ids():
                         cluster.node(node_id).terminate()
                     trace.append({"type": "Crash", "node": node_id, "step": i})
                     self.network.add_event({"name": "Remove", "params": {"i": node_id}})
-                
+                                
                 for node_id in cluster.node_ids():
+                    LOG.debug("Updating state of node: {}".format(node_id))
                     if node_id != crashed:
                         state = cluster.node(node_id).info()['raft_role']
                         self.network.add_event({"name": "UpdateState", "params": {"state": state}})
@@ -291,7 +294,8 @@ class Fuzzer:
 
                 if i in client_requests:
                     try:
-                        cluster.execute('INCRBY', 'counter', 1, with_retry=False)
+                        LOG.debug("Executing client request")                        
+                        cluster.execute_async('INCRBY', 'counter', 1, with_retry=False)
                     except:
                         pass
                     trace.append({"type": "ClientRequest", "step": i})
