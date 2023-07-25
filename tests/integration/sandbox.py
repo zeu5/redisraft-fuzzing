@@ -54,7 +54,7 @@ class PipeLogger(threading.Thread):
         try:
             for line in iter(self.pipe.readline, b''):
                 linestr = str(line, 'utf-8').rstrip()
-                self.loglines += linestr
+                self.loglines += (linestr+"\n")
                 LOG.debug('%s: %s', self.prefix, linestr)
         except ValueError as err:
             LOG.debug("PipeLogger: %s", str(err))
@@ -354,7 +354,7 @@ class RedisRaft(object):
         if 'redis bug report' in stdout or 'redis bug report' in stderr:
             raise RedisRaftBug('RedisRaft crash')
 
-    def terminate(self):
+    def terminate(self, check_error=True):
         if self.process:
             if self.paused:
                 self.resume()
@@ -378,7 +378,8 @@ class RedisRaft(object):
             self.stderr.join(timeout=30)
 
         self.process = None
-        self.check_error_in_logs()
+        if check_error:
+            self.check_error_in_logs()
 
     def kill(self):
         if self.process:
@@ -691,6 +692,15 @@ class Cluster(object):
         except redis.exceptions.RedisError:
             node.kill()
             raise
+
+    def get_log_lines(self):
+        log_lines = {}
+        for _id, node in self.nodes.items():
+            log_lines[_id] = {
+                "stdout": node.stdout.loglines.split("\n"),
+                "stderr": node.stderr.loglines.split("\n")
+            }
+        return log_lines
 
     def reset_leader(self):
         self.leader = next(iter(self.nodes.keys()))

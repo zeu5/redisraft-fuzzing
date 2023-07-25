@@ -452,8 +452,8 @@ int testNetworkSendEvent(RedisRaftCtx* rr, RedisModuleString* type, RedisModuleD
         RedisModuleString* value = (RedisModuleString*) data;
         size_t valuelen;
         const char* value_str = RedisModule_StringPtrLen(value, &valuelen);
-        const char* map_key_copy = strdup(key);
-        const char* value_copy = strdup(value_str);
+        const char* map_key_copy = redis_test_strndup(key, strlen(key));
+        const char* value_copy = redis_test_strndup(value_str, strlen(value_str));
         redis_test_map_add(params_map, map_key_copy, (void *) value_copy);
         key = (char *)RedisModule_DictNextC(params_iter, &keylen, &data);
     }
@@ -463,7 +463,7 @@ int testNetworkSendEvent(RedisRaftCtx* rr, RedisModuleString* type, RedisModuleD
     size_t typelen;
     type_s = RedisModule_StringPtrLen(type, &typelen);
 
-    redis_test_event* event = redis_test_create_event(strdup(type_s), params_map);
+    redis_test_event* event = redis_test_create_event(redis_test_strndup(type_s, strlen(type_s)), params_map);
     long err = redis_test_send_event(n_client, event);
 
     redis_test_free_map(params_map);

@@ -1277,10 +1277,50 @@ static void raftNotifyStateEvent(raft_server_t *raft, void *user_data, raft_stat
         case RAFT_STATE_CANDIDATE:
             LOG_NOTICE("State change: Node is now a candidate, term %ld",
                        raft_get_current_term(raft));
+                       
+            RedisRaftCtx* rr = (RedisRaftCtx*) user_data;
+            const char* event_key = "Timeout";
+            RedisModuleString* event_key_s = RedisModule_CreateString(NULL, event_key, strlen(event_key));
+
+            RedisModuleDict* params = RedisModule_CreateDict(NULL);
+            const char* node_key = "node";
+            RedisModuleString* node_key_s = RedisModule_CreateString(NULL, node_key, strlen(node_key));
+            char *node_id = malloc(sizeof(char)*3);
+            sprintf(node_id, "%d", (int) raft_get_nodeid(raft));
+            RedisModuleString* node_id_s = RedisModule_CreateString(NULL, node_id, sizeof(char)*3);
+            RedisModule_DictSet(params, node_key_s, node_id_s);
+
+            testNetworkSendEvent(rr, event_key_s, params);
+
+            free(node_id);
+            RedisModule_FreeString(NULL, node_id_s);
+            RedisModule_FreeString(NULL, event_key_s);
+            RedisModule_FreeDict(NULL, params);
+
             break;
         case RAFT_STATE_LEADER:
             LOG_NOTICE("State change: Node is now a leader, term %ld",
                        raft_get_current_term(raft));
+
+            rr = (RedisRaftCtx*) user_data;
+            event_key = "BecomeLeader";
+            event_key_s = RedisModule_CreateString(NULL, event_key, strlen(event_key));
+            
+            params = RedisModule_CreateDict(NULL);
+            node_key = "node";
+            node_key_s = RedisModule_CreateString(NULL, node_key, strlen(node_key));
+            node_id = malloc(sizeof(char)*3);
+            sprintf(node_id, "%d", (int) raft_get_nodeid(raft));
+            node_id_s = RedisModule_CreateString(NULL, node_id, sizeof(char)*3);
+            RedisModule_DictSet(params, node_key_s, node_id_s);
+
+            testNetworkSendEvent(rr, event_key_s, params);
+
+            free(node_id);
+            RedisModule_FreeString(NULL, node_id_s);
+            RedisModule_FreeString(NULL, event_key_s);
+            RedisModule_FreeDict(NULL, params);
+
             break;
         default:
             break;

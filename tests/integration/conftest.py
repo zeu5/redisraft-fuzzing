@@ -90,7 +90,7 @@ def pytest_addoption(parser):
     )
 
     parser.addoption(
-        '--fuzzer-coverage-path', default="",
+        '--fuzzer-report-path', default="fuzzer_report",
         help='record the coverage'
     )
 
@@ -163,9 +163,9 @@ def create_config(pytest_config):
             pass
         config.fuzzer_config["network_addr"] = (hostname, port)
     
-    config.fuzzer_config["iterations"] = pytest_config.getoption('--fuzzer-iterations')
+    config.fuzzer_config["iterations"] = int(pytest_config.getoption('--fuzzer-iterations'))
     config.fuzzer_config["mutator"] = pytest_config.getoption('--fuzzer-mutator')
-    config.fuzzer_config["coverage_store_path"] = pytest_config.getoption('--fuzzer-coverage-path')
+    config.fuzzer_config["report_path"] = pytest_config.getoption('--fuzzer-report-path')
 
     return config
 
@@ -252,6 +252,17 @@ def cluster_factory(request, elle):
     for _c in created_clusters:
         _c.destroy()
 
+@pytest.fixture
+def cluster_creator(request):
+    def _cluster_creator(with_intercept=False):
+        _config = create_config(request.config)
+        if with_intercept:
+            _config.intercept = True
+        _cluster = Cluster(_config)
+        return _cluster
+    
+    yield _cluster_creator
+
 
 @pytest.fixture
 def workload():
@@ -265,9 +276,9 @@ def workload():
 
 
 @pytest.fixture
-def fuzzer(request, cluster_factory):
+def fuzzer(request, cluster_creator):
     _config = create_config(request.config)
-    _fuzzer = Fuzzer(cluster_factory, _config.fuzzer_config)
+    _fuzzer = Fuzzer(cluster_creator, _config.fuzzer_config)
     _fuzzer.network.run()
 
     yield _fuzzer

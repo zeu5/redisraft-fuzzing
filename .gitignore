@@ -31,3 +31,4 @@ build/*
 jepsen/docker/store/*
 tests/tls/*
 .DS_Store
+fuzzer_report

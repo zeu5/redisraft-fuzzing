@@ -3,6 +3,7 @@ from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 from typing import Any
 from urllib.parse import urlsplit, parse_qs
 from threading import Lock, Thread
+from base64 import b64encode
 import requests
 import json
 import logging
@@ -10,7 +11,7 @@ import logging
 LOG = logging.getLogger('fuzzer-network')
 
 class Request:
-    def __init__(self, method, path, headers, query=None, content=None) -> None:
+    def __init__(self, method, path, headers,  content: str, query=None) -> None:
         self.path = path
         self.headers = headers
         self.query = query
@@ -18,7 +19,7 @@ class Request:
         self.method = method
 
 class Response:
-    def __init__(self, status_code, content) -> None:
+    def __init__(self, status_code: int, content) -> None:
         self.status_code = status_code
         self.headers = {}
         self.content = content
@@ -29,11 +30,24 @@ class Response:
     def set_content_json(self):
         self.headers["Content-Type"] = "application/json"
 
-    def json(status_code, content):
+    @staticmethod
+    def json(status_code: int, content):
         r = Response(status_code, content)
         r.set_content_json()
         return r
 
+class Router:
+    def __init__(self) -> None:
+        self.handlers = {}
+    
+    def add_route(self, path, handler):
+        self.handlers[path] = handler
+
+    def handle(self, request):
+        if request.path in self.handlers:
+            response = self.handlers[request.path](request)
+            return response
+        return Response(HTTPStatus.NOT_FOUND, "Path does not exist")
 
 class _ServerHandler(BaseHTTPRequestHandler):
     def __init__(self, *args, handler = None, **kwargs) -> None:
@@ -58,7 +72,7 @@ class _ServerHandler(BaseHTTPRequestHandler):
                 content = response.content.encode("UTF-8", "replace")
             
             if content is None:
-                self.send_header("Content-Length", 0)
+                self.send_header("Content-Length", str(0))
                 self.end_headers()
             else:
                 self.send_header("Content-Length", str(len(content)))
@@ -73,35 +87,28 @@ class _ServerHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         (_, _, path, query, _) = urlsplit(self.path)
         parsed_qs = parse_qs(query)
-        request = Request("GET", path, self.headers, parsed_qs)
-        response = self.handler.handle(request)
-        self.respond(response)
+        request = Request("GET", path, self.headers, "", parsed_qs)
+        if self.handler is not None:
+            response = self.handler.handle(request)
+            self.respond(response)
+        else:
+            self.send_error(HTTPStatus.NOT_FOUND, "Request not handled")
 
     def do_POST(self):
         (_, _, path, query, _) = urlsplit(self.path)
         parsed_qs = parse_qs(query)
-        length = self.headers.get('content-length')
+        length = int(self.headers.get('content-length')) # type: ignore
         content = ""
-        if int(length) > 0:
-            content = self.rfile.read(int(length))
+        if length > 0:
+            content = self.rfile.read(length).decode("utf-8", "replace") 
         
-        request = Request("POST", path, self.headers, parsed_qs, content)
-        response = self.handler.handle(request)
-        self.respond(response)
+        request = Request("POST", path, self.headers, content, parsed_qs)
+        if self.handler is not None:
+            response = self.handler.handle(request)
+            self.respond(response)
+        else:
+            self.send_error(HTTPStatus.NOT_FOUND, "Request not handled")
 
-
-class Router:
-    def __init__(self) -> None:
-        self.handlers = {}
-    
-    def add_route(self, path, handler):
-        self.handlers[path] = handler
-
-    def handle(self, request):
-        if request.path in self.handlers:
-            response = self.handlers[request.path](request)
-            return response
-        return Response(HTTPStatus.NOT_FOUND, "Path does not exist")
     
 
 class Server(ThreadingHTTPServer):
@@ -114,7 +121,7 @@ class Server(ThreadingHTTPServer):
 
     def finish_request(self, request, client_address) -> None:
         if self.RequestHandlerClass == _ServerHandler:
-            return self.RequestHandlerClass(request, client_address, self, handler=self.handler)
+            return self.RequestHandlerClass(request, client_address, self, handler=self.handler) # type: ignore
         return super().finish_request(request, client_address)
     
 
@@ -127,7 +134,8 @@ class Message:
         self.id = id
         self.parsed_message = json.loads(msg)
 
-    def from_str(s):
+    @staticmethod
+    def from_str(s: str): # type: ignore
         m = json.loads(s)
         if "from" not in m or "to" not in m or "type" not in m or "data" not in m:
             return None
@@ -144,6 +152,9 @@ class Network:
         self.mailboxes = {}
         self.replicas = {}
         self.event_trace = []
+        self.request_ctr = 1
+        self.request_map = {}
+
 
         router = Router()
         router.add_route("/replica", self._handle_replica)
@@ -173,15 +184,22 @@ class Network:
 
         return Response.json(HTTPStatus.OK, json.dumps({"message": "Ok"}))
     
+    def _get_request_number(self, data):
+        if data not in self.request_map:
+            self.request_map[data] = str(self.request_ctr)
+            self.request_ctr += 1
+            return self.request_map[data]
+        return self.request_map[data]
+    
     def _get_message_event_params(self, msg):
         if msg.type == "append_entries_request":
             return {
                 "type": "MsgApp",
                 "term": msg.parsed_message["term"],
-                "from": msg.fr,
-                "to": msg.to,
+                "from": int(msg.fr),
+                "to": int(msg.to),
                 "log_term": msg.parsed_message["prev_log_term"], 
-                "entries": [{"Term": e["term"], "Data": e["data"].encode("utf-8")} for e in msg.parsed_message["entries"] if e["data"] != ""],
+                "entries": [{"Term": e["term"], "Data": self._get_request_number(e["data"].encode("utf-8"))} for e in msg.parsed_message["entries"] if e["data"] != ""],
                 "index": msg.parsed_message["prev_log_idx"],
                 "commit": msg.parsed_message["leader_commit"],
                 "reject": False,
@@ -190,8 +208,8 @@ class Network:
             return {
                 "type": "MsgAppResp",
                 "term": msg.parsed_message["term"],
-                "from": msg.fr,
-                "to": msg.to,
+                "from": int(msg.fr),
+                "to": int(msg.to),
                 "log_term": 0, 
                 "entries": [],
                 "index": msg.parsed_message["current_idx"],
@@ -202,18 +220,27 @@ class Network:
             return {
                 "type": "MsgVote",
                 "term": msg.parsed_message["term"],
-                "from": msg.fr,
-                "to": msg.to,
-                "log_term": 0, 
+                "from": int(msg.fr),
+                "to": int(msg.to),
+                "log_term": msg.parsed_message["last_log_term"],
                 "entries": [],
-                "index": msg.parsed_message["current_idx"],
+                "index": msg.parsed_message["last_log_idx"],
                 "commit": 0,
-                "reject": True if msg.parsed_message["success"] == 1 else False,
+                "reject": False,
             }
-            return "MsgVote"
         elif msg.type == "request_vote_response":
-            return "MsgVoteResp"
-        return ""
+            return {
+                "type": "MsgVoteResp",
+                "term": msg.parsed_message["term"],
+                "from": int(msg.fr),
+                "to": int(msg.to),
+                "log_term": 0,
+                "entries": [],
+                "index": 0,
+                "commit": 0,
+                "reject": True if msg.parsed_message["vote_granted"] == 1 else False,
+            }
+        return {}
 
     def _handle_message(self, request: Request) -> Response:
         LOG.debug("Received message: {}".format(request.content))
@@ -231,12 +258,29 @@ class Network:
 
         return Response.json(HTTPStatus.OK, json.dumps({"message": "Ok"}))
     
+    def _map_event_params(self, event):
+        if event["type"] == "ClientRequest":
+            return {
+                "leader": int(event["params"]["leader"]),
+                "request": self._get_request_number(event["params"]["request"])
+            }
+        elif event["type"] == "BecomeLeader":
+            return {
+                "node": int(event["params"]["node"])
+            }
+        elif event["type"] == "Timeout":
+            return {
+                "node": int(event["params"]["node"])
+            }
+        else:
+            return {}
+    
     def _handle_event(self, request: Request) -> Response:
         LOG.debug("Received event: {}".format(request.content))
         event = json.loads(request.content)
         if "replica" in event:
             try:
-                e = {"name": event["type"], "params": event["params"]}
+                e = {"name": event["type"], "params": self._map_event_params(event)}
                 e["params"]["replica"] = event["replica"]
                 self.lock.acquire()
                 self.event_trace.append(e)
@@ -335,8 +379,9 @@ if __name__ == "__main__":
                              '(default: %(default)s)')
     args = parser.parse_args()
 
+
+    network = Network((args.bind, args.port))
     try:
-        network = Network((args.bind, args.port))
         network.run()
         while True:
             for r in network.get_replicas():

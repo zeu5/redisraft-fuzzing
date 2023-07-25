@@ -11,11 +11,26 @@ from enum import Enum
 
 import pytest
 from redis import ResponseError
+from os import path
+from matplotlib import pyplot as plt
+import numpy as np
 from .workload import MultiWithLargeReply, MonotonicIncrCheck
-from .fuzzer import Fuzzer
+from .fuzzer import Fuzzer, RandomMutator, SwapMutator
 
 def test_fuzzing_with_fuzzer(fuzzer: Fuzzer):
-    fuzzer.run()
+    mutators = [("random", RandomMutator()), ("swapNodes", SwapMutator())]
+    coverages = []
+    for (name, m) in mutators:
+        fuzzer.reset()
+        fuzzer.config.mutator = m
+        fuzzer.run()
+        coverages.append((name, [c for c in fuzzer.coverage]))
+
+    coverage_img = path.join(fuzzer.config.report_path, "coverage.png")
+    for (name, cov) in coverages:
+        plt.plot(np.arange(len(cov)), np.array(cov), label=name)
+    plt.legend()
+    plt.savefig(coverage_img)
 
 def test_fuzzing_with_restarts(cluster):
     """
