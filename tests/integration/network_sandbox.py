@@ -266,14 +266,25 @@ class Network:
             }
         elif event["type"] == "BecomeLeader":
             return {
-                "node": int(event["params"]["node"])
+                "node": int(event["params"]["node"]),
+                "term": int(event["params"]["term"])
             }
         elif event["type"] == "Timeout":
             return {
                 "node": int(event["params"]["node"])
             }
+        elif event["type"] == "MembershipChange":
+            return {
+                "action": event["params"]["action"],
+                "node": int(event["params"]["node"])
+            }
+        elif event["type"] == "UpdateSnapshot":
+            return {
+                "node": int(event["params"]["node"]),
+                "snapshot_index": int(event["params"]["snapshot_index"]),
+            }
         else:
-            return {}
+            return event["params"]
     
     def _handle_event(self, request: Request) -> Response:
         LOG.debug("Received event: {}".format(request.content))

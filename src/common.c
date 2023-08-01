@@ -319,19 +319,19 @@ int RedisRaftRecvEntry(RedisRaftCtx *rr, raft_entry_t *entry, RaftReq *req)
     if (raft_is_leader(rr->raft)) {
 
         RedisModuleDict* params = RedisModule_CreateDict(NULL);
-        const char* leader_param_key = "leader";
+        const char* leader_param_key = "leader\0";
         char* leader_id = malloc(sizeof(char)*3);
         sprintf(leader_id, "%d", (int) raft_get_nodeid(rr->raft));
         RedisModuleString* leader_id_s = RedisModule_CreateString(NULL, leader_id, sizeof(char)*3);
-        RedisModuleString* leader_key = RedisModule_CreateString(NULL, leader_param_key, strlen(leader_param_key));
+        RedisModuleString* leader_key = RedisModule_CreateString(NULL, leader_param_key, 7);
         RedisModule_DictSet(params, leader_key, leader_id_s);
-        const char* request_param_key = "request";
+        const char* request_param_key = "request\0";
         RedisModuleString* request_s = RedisModule_CreateString(NULL, entry->data, entry->data_len);
-        RedisModuleString* request_key = RedisModule_CreateString(NULL, request_param_key, strlen(request_param_key));
+        RedisModuleString* request_key = RedisModule_CreateString(NULL, request_param_key, 8);
         RedisModule_DictSet(params, request_key, request_s);
 
-        const char* event_type = "ClientRequest";
-        RedisModuleString* event_type_s = RedisModule_CreateString(NULL, event_type, strlen(event_type));
+        const char* event_type = "ClientRequest\0";
+        RedisModuleString* event_type_s = RedisModule_CreateString(NULL, event_type, 14);
         testNetworkSendEvent(rr, event_type_s, params);
 
         free(leader_id);

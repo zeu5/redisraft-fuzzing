@@ -259,8 +259,35 @@ RRStatus finalizeSnapshot(RedisRaftCtx *rr, SnapshotResult *sr)
      * page will be deleted. */
     raft_end_snapshot(rr->raft);
 
+    raft_index_t snapshot_index = raft_get_snapshot_last_idx(rr->raft);
+
+    RedisModuleString* event_key = RedisModule_CreateString(NULL, "UpdateSnapshot\0", 15);
+    RedisModuleDict* params = RedisModule_CreateDict(NULL);
+
+    char node_id[3];
+    snprintf(node_id, "%d", raft_get_nodeid(rr->raft));
+    RedisModuleString* param_node_id_key = RedisModule_CreateString(NULL, "node\0", 5);
+    RedisModuleString* param_node_id = RedisModule_CreateString(NULL, node_id, sizeof(char)*3);
+    RedisModule_DictSet(params, param_node_id_key, param_node_id);
+
+    char snapshot_index_s[4];
+    snprintf(snapshot_index_s, "%lu", (long) snapshot_index);
+    RedisModuleString* param_snapshot_index_key = RedisModule_CreateString(NULL, "snapshot_index\0", 15);
+    RedisModuleString* param_snapshot_index = RedisModule_CreateString(NULL, snapshot_index_s, sizeof(char)*4);
+    RedisModule_DictSet(params, param_snapshot_index_key, param_snapshot_index);
+
+    testNetworkSendEvent(rr, event_key, params);
+
+    RedisModule_FreeString(NULL, param_node_id_key);
+    RedisModule_FreeString(NULL, param_node_id);
+    RedisModule_FreeString(NULL, param_snapshot_index_key);
+    RedisModule_FreeString(NULL, param_snapshot_index);
+    RedisModule_FreeString(NULL, event_key);
+    RedisModule_FreeDict(NULL, params);
+
+
     LOG_NOTICE("Snapshot has been completed (snapshot idx=%lu).",
-               raft_get_snapshot_last_idx(rr->raft));
+               snapshot_index);
 
     uint64_t took;
 

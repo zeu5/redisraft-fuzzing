@@ -62,11 +62,12 @@ class SwapMutator:
 
     
 class TLCGuider:
-    def __init__(self, tlc_addr) -> None:
+    def __init__(self, tlc_addr, record_path) -> None:
         self.tlc_addr = tlc_addr
+        self.record_path = record_path
         self.states = {}
     
-    def check_new_state(self, trace, event_trace):
+    def check_new_state(self, trace, event_trace, name, record = False):
         trace_to_send = event_trace
         trace_to_send.append({"reset": True})
         LOG.debug("Sending trace to TLC: {}".format(trace_to_send))
@@ -74,18 +75,22 @@ class TLCGuider:
             r = requests.post("http://"+self.tlc_addr+"/execute", json=trace_to_send)
             if r.ok:
                 response = r.json()
-                LOG.debug("Received response from TLC: {}".format(response))
+                LOG.debug("Received response from TLC: {}".format(response))               
                 have_new = False
                 for i in range(len(response["states"])):
                     tlc_state = {"state": response["states"][i], "key" : response["keys"][i]}
                     if tlc_state["key"] not in self.states:
                         self.states[tlc_state["key"]] = tlc_state
                         have_new = True
+                if record:
+                    with open(path.join(self.record_path, name+".log"), "w") as record_file:
+                        lines = ["Trace sent to TLC: \n", json.dumps(trace_to_send)+"\n\n", "Response received from TLC:\n", json.dumps(response)+"\n"]
+                        record_file.writelines(lines)
                 return have_new
             else:
-                LOG.debug("Received response from TLC, code: {}, text: {}".format(r.status_code, r.content))
+                LOG.info("Received error response from TLC, code: {}, text: {}".format(r.status_code, r.content))
         except Exception as e:
-            LOG.debug("Error received from TLC: {}".format(e))
+            LOG.info("Error received from TLC: {}".format(e))
             pass
         finally:
             return False
@@ -95,7 +100,6 @@ class TLCGuider:
 
     def reset(self):
         self.states = {}
-    
 
 class Fuzzer:
     def __init__(self, cluster_factory, config = {}) -> None:
@@ -106,13 +110,21 @@ class Fuzzer:
         self.mutator = self.config.mutator
         self.cluster_factory = cluster_factory
         self.trace_queue = []
-        self.coverage = []
+        self.stats = {
+            "coverage" : [0],
+            "random_traces": 0,
+            "mutated_traces": 0
+        }
     
     def reset(self):
         self.network.clear_mailboxes()
         self.guider.reset()
         self.trace_queue = []
-        self.coverage = []
+        self.stats = {
+            "coverage" : [0],
+            "random_traces": 0,
+            "mutated_traces": 0
+        }
 
     def _validate_config(self, config):
         new_config = SimpleNamespace()
@@ -130,14 +142,6 @@ class Fuzzer:
             new_config.network_addr = ("127.0.0.1", 7074)
         else:
             new_config.network_addr = config["network_addr"]
-        
-        if "guider" not in config:
-            tlc_addr = "127.0.0.1:2023"
-            if "tlc_addr" in config:
-                tlc_addr = config["tlc_addr"]
-            new_config.guider = TLCGuider(tlc_addr)
-        else:
-            new_config.guider = config["guider"]
 
         if "iterations" not in config:
             new_config.iterations = 10
@@ -186,6 +190,17 @@ class Fuzzer:
         makedirs(report_path, exist_ok=True)
         new_config.report_path= report_path
 
+        new_config.record_file_prefix = ""
+        if "record_file_prefix" in config:
+            new_config.record_file_prefix = config["record_file_prefix"]
+
+        tlc_record_path = path.join(new_config.report_path, "traces" if new_config.record_file_prefix == "" else new_config.record_file_prefix+"_traces")
+        makedirs(tlc_record_path, exist_ok=True)
+        tlc_addr = "127.0.0.1:2023"
+        if "tlc_addr" in config:
+            tlc_addr = config["tlc_addr"]
+        new_config.guider = TLCGuider(tlc_addr, tlc_record_path)
+
         return new_config
 
     def run(self):
@@ -202,34 +217,42 @@ class Fuzzer:
             to_mimic = None
             if len(self.trace_queue) > 0:
                 to_mimic = self.trace_queue.pop(0)
+            if to_mimic is None:
+                self.stats["random_traces"] += 1
+            else:
+                self.stats["mutated_traces"] += 1
             try:
                 (trace, event_trace) = self.run_iteration("fuzz_{}".format(i), to_mimic)
             except Exception as ex:
                 LOG.info("Error running iteration %d: %s", i, ex)
             else:
-                if self.guider.check_new_state(trace, event_trace):
+                if self.guider.check_new_state(trace, event_trace, str(i), record=True):
                     for j in range(self.config.mutations_per_trace):
                         mutated_trace = self.mutator.mutate(trace)
                         if mutated_trace is not None:
                             self.trace_queue.append(mutated_trace)
-                self.coverage.append(self.guider.coverage())
+                self.stats["coverage"].append(self.guider.coverage())
     
-    def record_coverage(self):
-        cov_path = path.join(self.config.report_path, "coverage.json")
+    def record_stats(self):
+        cov_path = path.join(self.config.report_path, "stats.json" if self.config.record_file_prefix == "" else self.config.record_file_prefix+"_stats.json")
         with open(cov_path, "w") as cov_file:
-            json.dump({"coverage": self.coverage}, cov_file)
+            json.dump(self.stats, cov_file)
 
     def run_iteration(self, iteration, mimic = None):
         trace = []
-        crashed = None
+        crashed = set()
 
         crash_points = {}
+        start_points = {}
         schedule = []
         client_requests = []
         if mimic is None:
             node_ids = list(range(1, self.config.nodes+1))
             for c in random.sample(range(0, self.config.horizon, 2), self.config.crash_quota):
-                crash_points[c] = random.choice(node_ids)
+                node_id = random.choice(node_ids)
+                crash_points[c] = node_id
+                s = random.choice(range(c, self.config.horizon))
+                start_points[s] = node_id
 
             client_requests = random.sample(range(self.config.horizon), self.config.test_harness)
             for choice in random.choices(node_ids, k=self.config.horizon):
@@ -240,6 +263,8 @@ class Fuzzer:
             for ch in mimic:
                 if ch["type"] == "Crash":
                     crash_points[ch["step"]] = ch["node"]
+                elif ch["type"] == "Start":
+                    start_points[ch["step"]] = ch["node"]
                 elif ch["type"] == "Schedule":
                     schedule[ch["step"]] = (ch["node"], ch["max_messages"])
                 elif ch["type"] == "ClientRequest":
@@ -257,6 +282,7 @@ class Fuzzer:
                     lines.append("------ Stderr -----\n")
                     for line in logs["stderr"]:
                         lines.append(line+"\n")
+                    lines.append("\n\n")
                 record_file.writelines(lines)
 
 
@@ -265,19 +291,22 @@ class Fuzzer:
         LOG.debug("Creating cluster")
         cluster.create(self.config.nodes, wait=False)
         self.network.wait_for_nodes(self.config.nodes)
+        event_trace = []
         try:
             for i in range(self.config.horizon):
                 LOG.debug("Taking step {}".format(i))
-                if crashed is not None:
+                if i in start_points and start_points[i] in crashed:
+                    node_id = start_points[i]
                     LOG.debug("Starting crashed node")
-                    cluster.node(crashed).start()
-                    self.network.add_event({"name": "Add", "params": {"i": crashed}})
-                    crashed = None
+                    cluster.node(node_id).start()
+                    trace.append({"type": "Start", "node": node_id, "step": i})
+                    self.network.add_event({"name": "Add", "params": {"i": node_id}})
+                    crashed.remove(node_id)
                 
                 if i in crash_points:
                     LOG.debug("Crashing node")
                     node_id = crash_points[i]
-                    crashed = node_id
+                    crashed.add(node_id)
                     if node_id in cluster.node_ids():
                         cluster.node(node_id).terminate()
                     trace.append({"type": "Crash", "node": node_id, "step": i})
@@ -285,9 +314,12 @@ class Fuzzer:
                                 
                 for node_id in cluster.node_ids():
                     LOG.debug("Updating state of node: {}".format(node_id))
-                    if node_id != crashed:
-                        state = cluster.node(node_id).info()['raft_role']
-                        self.network.add_event({"name": "UpdateState", "params": {"state": state}})
+                    if node_id not in crashed:
+                        info = cluster.node(node_id).info()
+                        state = info['raft_role']
+                        lastlog_index = int(info["raft_current_index"])
+                        commit_index = int(info["raft_commit_index"])
+                        self.network.add_event({"name": "UpdateState", "params": {"i": node_id, "state": state, "last_index": lastlog_index, "commit_index": commit_index}})
 
                 self.network.schedule_replica(schedule[i][0], schedule[i][1])
                 trace.append({"type": "Schedule", "node": schedule[i][0], "step": i, "max_messages": schedule[i][1]})
@@ -302,15 +334,13 @@ class Fuzzer:
 
                 time.sleep(0.05)
         except:
-            pass
+            record_logs(path.join(self.config.report_path, "{}_{}.log".format(self.config.record_file_prefix, iteration)), cluster)
         finally:
             LOG.debug("Destroying cluster")
             try:
                 cluster.destroy()
             except:
-                pass
-            finally:
-                record_logs(path.join(self.config.report_path, "{}.log".format(iteration)), cluster)
+                record_logs(path.join(self.config.report_path, "{}_{}.log".format(self.config.record_file_prefix, iteration)), cluster)
 
         event_trace = self.network.get_event_trace()
         self.network.clear_mailboxes()

@@ -23,8 +23,10 @@ def test_fuzzing_with_fuzzer(fuzzer: Fuzzer):
     for (name, m) in mutators:
         fuzzer.reset()
         fuzzer.config.mutator = m
+        fuzzer.config.record_file_prefix = name
         fuzzer.run()
-        coverages.append((name, [c for c in fuzzer.coverage]))
+        fuzzer.record_stats()
+        coverages.append((name, [c for c in fuzzer.stats["coverage"]]))
 
     coverage_img = path.join(fuzzer.config.report_path, "coverage.png")
     for (name, cov) in coverages:

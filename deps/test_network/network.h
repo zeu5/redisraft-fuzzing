@@ -85,7 +85,7 @@ char* redis_test_string_str(redis_test_string*);
 size_t redis_test_string_len(redis_test_string*);
 void redis_test_free_string(redis_test_string*);
 
-char* redis_test_strndup(char*, size_t);
+char* redis_test_strndup(const char*, size_t);
 
 /* http_server.c */
 

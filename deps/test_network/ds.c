@@ -304,7 +304,7 @@ void redis_test_free_string(redis_test_string* s) {
     free(s);
 }
 
-char* redis_test_strndup(char* str, size_t size) {
+char* redis_test_strndup(const char* str, size_t size) {
     char *buffer;
     int n;
 

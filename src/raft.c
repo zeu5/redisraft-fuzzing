@@ -1181,6 +1181,51 @@ static char *raftMembershipInfoString(raft_server_t *raft)
     return buf;
 }
 
+void testSendMemberShipEvent(raft_server_t *raft, void *user_data, raft_membership_e type, raft_node_id_t raft_node) {
+    RedisRaftCtx *rr = (RedisRaftCtx*) user_data;
+
+    char* event_key_s = "MembershipChange\0";
+    RedisModuleString* event_key = RedisModule_CreateString(NULL, event_key_s, 17);
+    RedisModuleDict* params = RedisModule_CreateDict(NULL);
+
+    char action[10];
+
+    switch (type)
+    {
+    case RAFT_MEMBERSHIP_ADD:
+        memcpy(action, "Add\0", 4);
+        break;
+    case RAFT_MEMBERSHIP_REMOVE:
+        memcpy(action, "Remove\0", 7);
+        break;
+    default:
+        break;
+    }
+    char* action_key = "action\0";
+    RedisModuleString* param_action_key = RedisModule_CreateString(NULL, action_key, 7);
+    RedisModuleString* param_action = RedisModule_CreateString(NULL, action, strlen(action));
+    RedisModule_DictSet(params, param_action_key, param_action);
+
+    char* node_id = malloc(sizeof(char)*3);
+    sprintf(node_id, "%d", (int) raft_node);
+    char* node_key = "node\0";
+    RedisModuleString* param_node_key = RedisModule_CreateString(NULL, node_key, 5);
+    RedisModuleString* param_node = RedisModule_CreateString(NULL, node_id, sizeof(char)*3);
+    RedisModule_DictSet(params, param_node_key, param_node);
+
+    testNetworkSendEvent(rr, event_key, params);
+
+    (void) action;
+    RedisModule_FreeString(NULL, param_action_key);
+    RedisModule_FreeString(NULL, param_action);
+
+    free(node_id);
+    RedisModule_FreeString(NULL, param_node_key);
+    RedisModule_FreeString(NULL, param_node);
+    RedisModule_FreeString(NULL, event_key);
+    RedisModule_FreeDict(NULL, params);
+}
+
 void raftNotifyMembershipEvent(raft_server_t *raft, void *user_data,
                                raft_node_t *raft_node, raft_entry_t *entry,
                                raft_membership_e type)
@@ -1229,6 +1274,8 @@ void raftNotifyMembershipEvent(raft_server_t *raft, void *user_data,
         default:
             RedisModule_Assert(0);
     }
+
+    testSendMemberShipEvent(raft, user_data, type, raft_node_get_id(raft_node));
 
     char *s = raftMembershipInfoString(raft);
     LOG_NOTICE("Cluster Membership: %s", s);
@@ -1307,17 +1354,27 @@ static void raftNotifyStateEvent(raft_server_t *raft, void *user_data, raft_stat
             event_key_s = RedisModule_CreateString(NULL, event_key, strlen(event_key));
             
             params = RedisModule_CreateDict(NULL);
-            node_key = "node";
-            node_key_s = RedisModule_CreateString(NULL, node_key, strlen(node_key));
+            node_key = "node\0";
+            node_key_s = RedisModule_CreateString(NULL, node_key, 5);
             node_id = malloc(sizeof(char)*3);
             sprintf(node_id, "%d", (int) raft_get_nodeid(raft));
             node_id_s = RedisModule_CreateString(NULL, node_id, sizeof(char)*3);
             RedisModule_DictSet(params, node_key_s, node_id_s);
 
+            RedisModuleString* term_key_s = RedisModule_CreateString(NULL, "term\0", 5);
+            char* term = malloc(sizeof(char)*3);
+            sprintf(term, "%d", (int) raft_get_current_term(raft));
+            RedisModuleString* term_s = RedisModule_CreateString(NULL, term, sizeof(char)*3);
+            RedisModule_DictSet(params, term_key_s, term_s);
+
             testNetworkSendEvent(rr, event_key_s, params);
 
             free(node_id);
             RedisModule_FreeString(NULL, node_id_s);
+            RedisModule_FreeString(NULL, node_key_s);
+            free(term);
+            RedisModule_FreeString(NULL, term_key_s);
+            RedisModule_FreeString(NULL, term_s);
             RedisModule_FreeString(NULL, event_key_s);
             RedisModule_FreeDict(NULL, params);
 

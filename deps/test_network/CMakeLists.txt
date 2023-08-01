@@ -23,10 +23,11 @@ set_property(TARGET test_network APPEND PROPERTY
 target_compile_options(test_network PUBLIC -Wall -Wno-void-pointer-to-int-cast -Wno-int-to-void-pointer-cast -Wno-incompatible-pointer-types-discards-qualifiers -Wno-int-conversion)
 
 target_link_directories(test_network PUBLIC /usr/local/lib)
+target_link_directories(test_network PUBLIC /home/snagendra/Tools/json-c/lib)
 target_link_libraries(test_network PUBLIC json-c curl)
 
 target_include_directories(test_network PUBLIC
-        /usr/local/include/json-c)
+        /home/snagendra/Tools/json-c/include)
 target_include_directories(test_network PUBLIC
         /usr/local/include)
 
@@ -49,14 +50,21 @@ set_target_properties(test_network_static PROPERTIES
 set_property(TARGET test_network_static APPEND PROPERTY
         ADDITIONAL_CLEAN_FILES ${LIBRARY_OUTPUT_DIRECTORY}/$<TARGET_FILE_NAME:test_network>)
 
-target_compile_options(test_network_static PUBLIC -Wall -Wno-void-pointer-to-int-cast -Wno-int-to-void-pointer-cast -Wno-incompatible-pointer-types-discards-qualifiers -Wno-int-conversion)
+target_compile_options(test_network_static PUBLIC -Wall -Wno-void-pointer-to-int-cast -Wno-int-to-void-pointer-cast -Wno-incompatible-pointer-types-discards-qualifiers -Wno-int-conversion -fPIC)
 
 target_link_directories(test_network_static PUBLIC /usr/local/lib)
+target_link_directories(test_network_static PUBLIC /home/snagendra/Tools/json-c/lib)
 target_link_libraries(test_network_static PUBLIC json-c curl)
 
 target_include_directories(test_network_static PUBLIC
-        /usr/local/include/json-c)
+        /home/snagendra/Tools/json-c/include)
 target_include_directories(test_network_static PUBLIC
         /usr/local/include)
 
 # ------------------------------ Static library end -----------------------------#
+
+# ------------------------------ Unit tests -------------------------------------#
+
+
+
+# ------------------------------ Unit tests end ---------------------------------#
