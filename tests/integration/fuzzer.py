@@ -50,7 +50,6 @@ class SwapMutator:
         for e in trace:
             if e["type"] != "Schedule":
                 new_trace.append(e)
-    
             if e["step"] == first:
                 new_trace.append(second_value)
             elif e["step"] == second:
@@ -59,7 +58,73 @@ class SwapMutator:
                 new_trace.append(e)
         
         return new_trace
+    
+class SwapCrashStepsMutator:
+    def __init__(self) -> None:
+        pass
 
+    def mutate(self, trace: list[dict]) -> list[dict]:
+        new_trace = []
+
+        crash_steps = set()
+        for e in trace:
+            if e["type"] == "Crash":
+                crash_steps.add(e["step"])
+        
+        [first, second] = random.sample(list(crash_steps), 2)
+        for e in trace:
+            if e["type"] != "Crash":
+                new_trace.append(e)
+            
+            if e["step"] == first:
+                new_trace.append({"type": "Crash", "node": e["node"], "step": second})
+            elif e["step"] == second:
+                new_trace.append({"type": "Crash", "node": e["node"], "step": first})
+            else:
+                new_trace.append(e)
+            
+        return new_trace
+    
+class SwapCrashNodesMutator:
+    def __init__(self) -> None:
+        pass
+
+    def mutate(self, trace: list[dict]) -> list[dict]:
+        new_trace = []
+
+        crash_steps = {}
+        for e in trace:
+            if e["type"] == "Crash":
+                crash_steps[e["step"]] = e["node"]
+        
+        [first, second] = random.sample(list(crash_steps.keys()), 2)
+        for e in trace:
+            if e["type"] != "Crash":
+                new_trace.append(e)
+            
+            if e["step"] == first:
+                new_trace.append({"type": "Crash", "node":crash_steps[second], "step": e["step"]})
+            elif e["step"] == second:
+                new_trace.append({"type": "Crash", "node":crash_steps[first], "step": e["step"]})
+            else:
+                new_trace.append(e)
+
+        return new_trace
+
+
+class CombinedMutator:
+    def __init__(self, mutators) -> None:
+        self.mutators = mutators
+    
+    def mutate(self, trace: list[dict]) -> list[dict]:
+        new_trace = []
+        for e in trace:
+            new_trace.append(e)
+        
+        for m in self.mutators:
+            new_trace = m.mutate(new_trace)
+        
+        return new_trace
     
 class TLCGuider:
     def __init__(self, tlc_addr, record_path) -> None:
@@ -67,7 +132,7 @@ class TLCGuider:
         self.record_path = record_path
         self.states = {}
     
-    def check_new_state(self, trace, event_trace, name, record = False):
+    def check_new_state(self, trace, event_trace, name, record = False) -> int:
         trace_to_send = event_trace
         trace_to_send.append({"reset": True})
         LOG.debug("Sending trace to TLC: {}".format(trace_to_send))
@@ -76,24 +141,24 @@ class TLCGuider:
             if r.ok:
                 response = r.json()
                 LOG.debug("Received response from TLC: {}".format(response))               
-                have_new = False
+                new_states = 0
                 for i in range(len(response["states"])):
                     tlc_state = {"state": response["states"][i], "key" : response["keys"][i]}
                     if tlc_state["key"] not in self.states:
                         self.states[tlc_state["key"]] = tlc_state
-                        have_new = True
+                        new_states += 1
                 if record:
                     with open(path.join(self.record_path, name+".log"), "w") as record_file:
                         lines = ["Trace sent to TLC: \n", json.dumps(trace_to_send)+"\n\n", "Response received from TLC:\n", json.dumps(response)+"\n"]
                         record_file.writelines(lines)
-                return have_new
+                return new_states
             else:
                 LOG.info("Received error response from TLC, code: {}, text: {}".format(r.status_code, r.content))
         except Exception as e:
             LOG.info("Error received from TLC: {}".format(e))
             pass
         finally:
-            return False
+            return 0
     
     def coverage(self):
         return len(self.states.keys())
@@ -168,10 +233,14 @@ class Fuzzer:
         else:
             new_config.mutations_per_trace = config["mutations_per_trace"]
         
-        if "init_population" not in config:
-            new_config.init_population = 5
+        if "seed_population" not in config:
+            new_config.seed_population = 5
         else:
-            new_config.init_population = config["init_population"]
+            new_config.seed_population = config["seed_population"]
+
+        new_config.seed_frequency = 1000
+        if "seed_frequency" in config:
+            new_config.seed_frequency = config["seed_frequency"]
         
         if "test_harness" not in config:
             new_config.test_harness = 3
@@ -203,17 +272,20 @@ class Fuzzer:
 
         return new_config
 
-    def run(self):
-        LOG.info("Creating initial population")
-        for i in range(self.config.init_population):
-            LOG.info("Initial population iteration %d", i)
-            (trace, event_trace) = self.run_iteration("pop_{}".format(i))
-            for j in range(self.config.mutations_per_trace):
-                self.trace_queue.append(self.mutator.mutate(trace))
+    def seed(self, iter):
+        LOG.info("Seeding for iteration {}".format(iter))
+        self.trace_queue = []
+        for i in range(self.config.seed_population):
+            (trace, _) = self.run_iteration("seed_{}_{}".format(iter, i))
+            self.trace_queue.append(trace)
 
-        LOG.info("Starting main fuzzer loop")
+    def run(self):
+        LOG.info("Starting fuzzer loop")
         for i in range(self.config.iterations):
             LOG.info("Starting fuzzer iteration %d", i)
+            if i % self.config.seed_frequency == 0:
+                self.seed(i)
+
             to_mimic = None
             if len(self.trace_queue) > 0:
                 to_mimic = self.trace_queue.pop(0)
@@ -226,8 +298,9 @@ class Fuzzer:
             except Exception as ex:
                 LOG.info("Error running iteration %d: %s", i, ex)
             else:
-                if self.guider.check_new_state(trace, event_trace, str(i), record=True):
-                    for j in range(self.config.mutations_per_trace):
+                new_states = self.guider.check_new_state(trace, event_trace, str(i), record=True)
+                if new_states > 0:
+                    for j in range(new_states * self.config.mutations_per_trace):
                         mutated_trace = self.mutator.mutate(trace)
                         if mutated_trace is not None:
                             self.trace_queue.append(mutated_trace)

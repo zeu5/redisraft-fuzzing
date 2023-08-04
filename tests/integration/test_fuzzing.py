@@ -10,16 +10,18 @@ import time
 from enum import Enum
 
 import pytest
+import numpy as np
+import json
 from redis import ResponseError
 from os import path
 from matplotlib import pyplot as plt
-import numpy as np
 from .workload import MultiWithLargeReply, MonotonicIncrCheck
-from .fuzzer import Fuzzer, RandomMutator, SwapMutator
+from .fuzzer import Fuzzer, RandomMutator, SwapMutator, CombinedMutator, SwapCrashNodesMutator
 
 def test_fuzzing_with_fuzzer(fuzzer: Fuzzer):
-    mutators = [("random", RandomMutator()), ("swapNodes", SwapMutator())]
+    mutators = [("random", RandomMutator()), ("swapNodes", SwapMutator()), ("swapCrashNodes", SwapCrashNodesMutator())]
     coverages = []
+    stats = {}
     for (name, m) in mutators:
         fuzzer.reset()
         fuzzer.config.mutator = m
@@ -27,6 +29,25 @@ def test_fuzzing_with_fuzzer(fuzzer: Fuzzer):
         fuzzer.run()
         fuzzer.record_stats()
         coverages.append((name, [c for c in fuzzer.stats["coverage"]]))
+        stats[name] = {
+            "random_traces": fuzzer.stats["random_traces"],
+            "mutated_traces": fuzzer.stats["mutated_traces"]
+        }
+
+    fuzzer.reset()
+    fuzzer.config.mutator = CombinedMutator([m[1] for m in mutators])
+    fuzzer.config.record_file_prefix = "all_mutators"
+    fuzzer.run()
+    fuzzer.record_stats()
+    coverages.append(("all_mutators", [c for c in fuzzer.stats["coverage"]]))
+    stats["all_mutators"] = {
+        "random_traces": fuzzer.stats["random_traces"],
+        "mutated_traces": fuzzer.stats["mutated_traces"]
+    }
+
+    stats_path = path.join(fuzzer.config.report_path, "stats.json")
+    with open(stats_path, "w") as stats_file:
+        json.dump(stats, stats_file)
 
     coverage_img = path.join(fuzzer.config.report_path, "coverage.png")
     for (name, cov) in coverages:
