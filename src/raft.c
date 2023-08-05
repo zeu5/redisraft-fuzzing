@@ -1781,6 +1781,24 @@ void RaftLibraryInit(RedisRaftCtx *rr, bool cluster_init)
     }
 
     if (cluster_init) {
+        const char* event_key = "Timeout";
+        RedisModuleString* event_key_s = RedisModule_CreateString(NULL, event_key, strlen(event_key));
+
+        RedisModuleDict* params = RedisModule_CreateDict(NULL);
+        const char* node_key = "node";
+        RedisModuleString* node_key_s = RedisModule_CreateString(NULL, node_key, strlen(node_key));
+        char *node_id = malloc(sizeof(char)*3);
+        sprintf(node_id, "%d", (int) raft_get_nodeid(rr->raft));
+        RedisModuleString* node_id_s = RedisModule_CreateString(NULL, node_id, sizeof(char)*3);
+        RedisModule_DictSet(params, node_key_s, node_id_s);
+
+        testNetworkSendEvent(rr, event_key_s, params);
+
+        free(node_id);
+        RedisModule_FreeString(NULL, node_id_s);
+        RedisModule_FreeString(NULL, event_key_s);
+        RedisModule_FreeDict(NULL, params);
+
         if (raft_set_current_term(rr->raft, 1) != 0 ||
             raft_become_leader(rr->raft) != 0) {
             PANIC("Failed to init raft library");

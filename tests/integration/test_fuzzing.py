@@ -35,7 +35,7 @@ def test_fuzzing_with_fuzzer(fuzzer: Fuzzer):
         }
 
     fuzzer.reset()
-    fuzzer.config.mutator = CombinedMutator([m[1] for m in mutators])
+    fuzzer.config.mutator = CombinedMutator([m[1] for m in mutators[1:]])
     fuzzer.config.record_file_prefix = "all_mutators"
     fuzzer.run()
     fuzzer.record_stats()

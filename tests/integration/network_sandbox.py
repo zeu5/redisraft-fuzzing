@@ -186,7 +186,7 @@ class Network:
     
     def _get_request_number(self, data):
         if data not in self.request_map:
-            self.request_map[data] = str(self.request_ctr)
+            self.request_map[data] = self.request_ctr
             self.request_ctr += 1
             return self.request_map[data]
         return self.request_map[data]
@@ -199,7 +199,7 @@ class Network:
                 "from": int(msg.fr),
                 "to": int(msg.to),
                 "log_term": msg.parsed_message["prev_log_term"], 
-                "entries": [{"Term": e["term"], "Data": self._get_request_number(e["data"].encode("utf-8"))} for e in msg.parsed_message["entries"] if e["data"] != ""],
+                "entries": [{"Term": e["term"], "Data": str(self._get_request_number(e["data"].encode("utf-8")))} for e in msg.parsed_message["entries"] if e["data"] != ""],
                 "index": msg.parsed_message["prev_log_idx"],
                 "commit": msg.parsed_message["leader_commit"],
                 "reject": False,
@@ -214,7 +214,7 @@ class Network:
                 "entries": [],
                 "index": msg.parsed_message["current_idx"],
                 "commit": 0,
-                "reject": True if msg.parsed_message["success"] == 1 else False,
+                "reject": msg.parsed_message["success"] == 0,
             }
         elif msg.type == "request_vote_request":
             return {
@@ -238,7 +238,7 @@ class Network:
                 "entries": [],
                 "index": 0,
                 "commit": 0,
-                "reject": True if msg.parsed_message["vote_granted"] == 1 else False,
+                "reject": msg.parsed_message["vote_granted"] == 0,
             }
         return {}
 

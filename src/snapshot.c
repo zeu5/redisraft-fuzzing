@@ -265,13 +265,13 @@ RRStatus finalizeSnapshot(RedisRaftCtx *rr, SnapshotResult *sr)
     RedisModuleDict* params = RedisModule_CreateDict(NULL);
 
     char node_id[3];
-    snprintf(node_id, "%d", raft_get_nodeid(rr->raft));
+    sprintf(node_id, "%d", raft_get_nodeid(rr->raft));
     RedisModuleString* param_node_id_key = RedisModule_CreateString(NULL, "node\0", 5);
     RedisModuleString* param_node_id = RedisModule_CreateString(NULL, node_id, sizeof(char)*3);
     RedisModule_DictSet(params, param_node_id_key, param_node_id);
 
     char snapshot_index_s[4];
-    snprintf(snapshot_index_s, "%lu", (long) snapshot_index);
+    sprintf(snapshot_index_s, "%lu", (long) snapshot_index);
     RedisModuleString* param_snapshot_index_key = RedisModule_CreateString(NULL, "snapshot_index\0", 15);
     RedisModuleString* param_snapshot_index = RedisModule_CreateString(NULL, snapshot_index_s, sizeof(char)*4);
     RedisModule_DictSet(params, param_snapshot_index_key, param_snapshot_index);

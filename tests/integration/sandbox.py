@@ -229,7 +229,7 @@ class RedisRaft(object):
             try:
                 return self.client.execute_command('RAFT.CLUSTER', *args)
             except redis.exceptions.RedisError as err:
-                LOG.info(err)
+                LOG.debug(err)
                 if retries is not None:
                     retries -= 1
                     if retries <= 0:
@@ -246,7 +246,7 @@ class RedisRaft(object):
         else:
             dbid = self.cluster('init', cluster_id)
 
-        LOG.info('Cluster created: %s', dbid)
+        LOG.debug('Cluster created: %s', dbid)
         return self
 
     def join(self, addresses, single_run=False):
@@ -263,7 +263,7 @@ class RedisRaft(object):
         if extra_raft_args is None:
             extra_raft_args = []
         args = [self.executable] + self.args + self.raft_args + extra_raft_args
-        logging.info("starting node: args = {}".format(args))
+        logging.debug("starting node: args = {}".format(args))
 
         self.process = subprocess.Popen(
             stdout=subprocess.PIPE, stderr=subprocess.PIPE,
@@ -280,7 +280,7 @@ class RedisRaft(object):
         if not verify:
             return
         self.verify_up()
-        LOG.info('RedisRaft<%s> is up, pid=%s, guid=%s', self.id,
+        LOG.debug('RedisRaft<%s> is up, pid=%s, guid=%s', self.id,
                  self.process.pid, self.guid)
 
     def load_module(self, module):
@@ -371,7 +371,7 @@ class RedisRaft(object):
                 LOG.error('RedisRaft<%s> failed to terminate: %s',
                           self.id, err)
             else:
-                LOG.info('RedisRaft<%s> terminated', self.id)
+                LOG.debug('RedisRaft<%s> terminated', self.id)
 
         if self.stdout:
             self.stdout.join(timeout=30)
@@ -396,7 +396,7 @@ class RedisRaft(object):
                 LOG.error('Cannot kill RedisRaft<%s>: %s',
                           self.id, err)
             else:
-                LOG.info('RedisRaft<%s> killed', self.id)
+                LOG.debug('RedisRaft<%s> killed', self.id)
         self.process = None
         self.check_error_in_logs()
 
@@ -644,7 +644,7 @@ class Cluster(object):
             if _id == 1:
                 node.init(cluster_id=cluster_id)
             else:
-                logging.info("{} joining".format(_id))
+                logging.debug("{} joining".format(_id))
                 node.join(['localhost:{}'.format(self.base_port + 1)])
 
         self.leader = 1

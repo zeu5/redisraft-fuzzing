@@ -149,7 +149,7 @@ class TLCGuider:
                         new_states += 1
                 if record:
                     with open(path.join(self.record_path, name+".log"), "w") as record_file:
-                        lines = ["Trace sent to TLC: \n", json.dumps(trace_to_send)+"\n\n", "Response received from TLC:\n", json.dumps(response)+"\n"]
+                        lines = ["Trace sent to TLC: \n", json.dumps(trace_to_send, indent=2)+"\n\n", "Response received from TLC:\n", json.dumps(response, indent=2)+"\n"]
                         record_file.writelines(lines)
                 return new_states
             else:
@@ -224,7 +224,7 @@ class Fuzzer:
             new_config.nodes = config["nodes"]
         
         if "crash_quota" not in config:
-            new_config.crash_quota = 4
+            new_config.crash_quota = 8
         else:
             new_config.crash_quota = config["crash_quota"]
 
@@ -234,11 +234,11 @@ class Fuzzer:
             new_config.mutations_per_trace = config["mutations_per_trace"]
         
         if "seed_population" not in config:
-            new_config.seed_population = 5
+            new_config.seed_population = 10
         else:
             new_config.seed_population = config["seed_population"]
 
-        new_config.seed_frequency = 1000
+        new_config.seed_frequency = 100
         if "seed_frequency" in config:
             new_config.seed_frequency = config["seed_frequency"]
         
@@ -298,7 +298,8 @@ class Fuzzer:
             except Exception as ex:
                 LOG.info("Error running iteration %d: %s", i, ex)
             else:
-                new_states = self.guider.check_new_state(trace, event_trace, str(i), record=True)
+                trace_name = str(i) if self.config.record_file_prefix == "" else "{}_{}".format(self.config.record_file_prefix, i)
+                new_states = self.guider.check_new_state(trace, event_trace, trace_name, record=False)
                 if new_states > 0:
                     for j in range(new_states * self.config.mutations_per_trace):
                         mutated_trace = self.mutator.mutate(trace)
@@ -392,7 +393,8 @@ class Fuzzer:
                         state = info['raft_role']
                         lastlog_index = int(info["raft_current_index"])
                         commit_index = int(info["raft_commit_index"])
-                        self.network.add_event({"name": "UpdateState", "params": {"i": node_id, "state": state, "last_index": lastlog_index, "commit_index": commit_index}})
+                        term = int(info["raft_current_term"])
+                        self.network.add_event({"name": "UpdateState", "params": {"i": node_id, "state": state, "last_index": lastlog_index, "commit_index": commit_index, "term": term}})
 
                 self.network.schedule_replica(schedule[i][0], schedule[i][1])
                 trace.append({"type": "Schedule", "node": schedule[i][0], "step": i, "max_messages": schedule[i][1]})
@@ -405,7 +407,7 @@ class Fuzzer:
                         pass
                     trace.append({"type": "ClientRequest", "step": i})
 
-                time.sleep(0.05)
+                time.sleep(0.005)
         except:
             record_logs(path.join(self.config.report_path, "{}_{}.log".format(self.config.record_file_prefix, iteration)), cluster)
         finally:
