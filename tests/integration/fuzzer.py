@@ -157,8 +157,8 @@ class TLCGuider:
         except Exception as e:
             LOG.info("Error received from TLC: {}".format(e))
             pass
-        finally:
-            return 0
+
+        return 0
     
     def coverage(self):
         return len(self.states.keys())
