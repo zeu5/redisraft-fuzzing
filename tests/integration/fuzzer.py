@@ -214,7 +214,7 @@ class Fuzzer:
             new_config.iterations = config["iterations"]
 
         if "horizon" not in config:
-            new_config.horizon = 50
+            new_config.horizon = 100
         else:
             new_config.horizon = config["horizon"]
 
@@ -224,7 +224,7 @@ class Fuzzer:
             new_config.nodes = config["nodes"]
         
         if "crash_quota" not in config:
-            new_config.crash_quota = 8
+            new_config.crash_quota = 10
         else:
             new_config.crash_quota = config["crash_quota"]
 
@@ -238,7 +238,7 @@ class Fuzzer:
         else:
             new_config.seed_population = config["seed_population"]
 
-        new_config.seed_frequency = 100
+        new_config.seed_frequency = 1000
         if "seed_frequency" in config:
             new_config.seed_frequency = config["seed_frequency"]
         
@@ -248,7 +248,7 @@ class Fuzzer:
             new_config.test_harness = config["test_harness"]
 
         if "max_message_to_schedule" not in config:
-            new_config.max_messages_to_schedule = 6
+            new_config.max_messages_to_schedule = 5
         else:
             new_config.max_messages_to_schedule = config["max_messages_to_schedule"]
 
@@ -281,6 +281,7 @@ class Fuzzer:
 
     def run(self):
         LOG.info("Starting fuzzer loop")
+        start = time.time_ns()
         for i in range(self.config.iterations):
             LOG.info("Starting fuzzer iteration %d", i)
             if i % self.config.seed_frequency == 0:
@@ -298,14 +299,14 @@ class Fuzzer:
             except Exception as ex:
                 LOG.info("Error running iteration %d: %s", i, ex)
             else:
-                trace_name = str(i) if self.config.record_file_prefix == "" else "{}_{}".format(self.config.record_file_prefix, i)
-                new_states = self.guider.check_new_state(trace, event_trace, trace_name, record=False)
+                new_states = self.guider.check_new_state(trace, event_trace, str(i), record=False)
                 if new_states > 0:
                     for j in range(new_states * self.config.mutations_per_trace):
                         mutated_trace = self.mutator.mutate(trace)
                         if mutated_trace is not None:
                             self.trace_queue.append(mutated_trace)
                 self.stats["coverage"].append(self.guider.coverage())
+        self.stats["runtime"] = time.time_ns() - start
     
     def record_stats(self):
         cov_path = path.join(self.config.report_path, "stats.json" if self.config.record_file_prefix == "" else self.config.record_file_prefix+"_stats.json")

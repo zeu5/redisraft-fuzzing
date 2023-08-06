@@ -19,7 +19,7 @@ from .workload import MultiWithLargeReply, MonotonicIncrCheck
 from .fuzzer import Fuzzer, RandomMutator, SwapMutator, CombinedMutator, SwapCrashNodesMutator
 
 def test_fuzzing_with_fuzzer(fuzzer: Fuzzer):
-    mutators = [("random", RandomMutator()), ("swapNodes", SwapMutator()), ("swapCrashNodes", SwapCrashNodesMutator())]
+    mutators = [("random", RandomMutator()), ("all_mutators", CombinedMutator([SwapMutator(), SwapCrashNodesMutator()]))]
     coverages = []
     stats = {}
     for (name, m) in mutators:
@@ -33,18 +33,7 @@ def test_fuzzing_with_fuzzer(fuzzer: Fuzzer):
             "random_traces": fuzzer.stats["random_traces"],
             "mutated_traces": fuzzer.stats["mutated_traces"]
         }
-
-    fuzzer.reset()
-    fuzzer.config.mutator = CombinedMutator([m[1] for m in mutators[1:]])
-    fuzzer.config.record_file_prefix = "all_mutators"
-    fuzzer.run()
-    fuzzer.record_stats()
-    coverages.append(("all_mutators", [c for c in fuzzer.stats["coverage"]]))
-    stats["all_mutators"] = {
-        "random_traces": fuzzer.stats["random_traces"],
-        "mutated_traces": fuzzer.stats["mutated_traces"]
-    }
-
+        
     stats_path = path.join(fuzzer.config.report_path, "stats.json")
     with open(stats_path, "w") as stats_file:
         json.dump(stats, stats_file)
