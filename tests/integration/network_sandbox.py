@@ -55,30 +55,33 @@ class _ServerHandler(BaseHTTPRequestHandler):
         super().__init__(*args, **kwargs)
 
     def respond(self, response: Response):
-        if response is None:
-            self.send_error(HTTPStatus.INTERNAL_SERVER_ERROR, "Failed to generate a response")
+        try:
+            if response is None:
+                self.send_error(HTTPStatus.INTERNAL_SERVER_ERROR, "Failed to generate a response")
 
-        if response.status_code >= HTTPStatus.BAD_REQUEST:
-            for key in response.headers:
-                self.send_header(key, response.headers[key])
-            self.send_error(response.status_code, response.content)
-        else:
-            self.send_response(response.status_code)
-            for key in response.headers:
-                self.send_header(key, response.headers[key])
-
-            content = None
-            if response.content is not None and len(response.content) > 0:
-                content = response.content.encode("UTF-8", "replace")
-            
-            if content is None:
-                self.send_header("Content-Length", str(0))
-                self.end_headers()
+            if response.status_code >= HTTPStatus.BAD_REQUEST:
+                for key in response.headers:
+                    self.send_header(key, response.headers[key])
+                self.send_error(response.status_code, response.content)
             else:
-                self.send_header("Content-Length", str(len(content)))
-                self.end_headers()
-                self.wfile.write(content)
+                self.send_response(response.status_code)
+                for key in response.headers:
+                    self.send_header(key, response.headers[key])
 
+                content = None
+                if response.content is not None and len(response.content) > 0:
+                    content = response.content.encode("UTF-8", "replace")
+                
+                if content is None:
+                    self.send_header("Content-Length", str(0))
+                    self.end_headers()
+                else:
+                    self.send_header("Content-Length", str(len(content)))
+                    self.end_headers()
+                    self.wfile.write(content)
+
+                return
+        except Exception as e:
             return
     
     def log_message(self, format: str, *args: Any) -> None:

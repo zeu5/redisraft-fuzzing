@@ -1,10 +1,10 @@
 from .network_sandbox import Network
 from .sandbox import RedisRaftBug
+from .fuzzer_guider import TLCGuider
 from types import SimpleNamespace
 from os import path, makedirs
 import random
 import json
-import requests
 import logging
 import time
 
@@ -125,46 +125,6 @@ class CombinedMutator:
             new_trace = m.mutate(new_trace)
         
         return new_trace
-    
-class TLCGuider:
-    def __init__(self, tlc_addr, record_path) -> None:
-        self.tlc_addr = tlc_addr
-        self.record_path = record_path
-        self.states = {}
-    
-    def check_new_state(self, trace, event_trace, name, record = False) -> int:
-        trace_to_send = event_trace
-        trace_to_send.append({"reset": True})
-        LOG.debug("Sending trace to TLC: {}".format(trace_to_send))
-        try:
-            r = requests.post("http://"+self.tlc_addr+"/execute", json=trace_to_send)
-            if r.ok:
-                response = r.json()
-                LOG.debug("Received response from TLC: {}".format(response))               
-                new_states = 0
-                for i in range(len(response["states"])):
-                    tlc_state = {"state": response["states"][i], "key" : response["keys"][i]}
-                    if tlc_state["key"] not in self.states:
-                        self.states[tlc_state["key"]] = tlc_state
-                        new_states += 1
-                if record:
-                    with open(path.join(self.record_path, name+".log"), "w") as record_file:
-                        lines = ["Trace sent to TLC: \n", json.dumps(trace_to_send, indent=2)+"\n\n", "Response received from TLC:\n", json.dumps(response, indent=2)+"\n"]
-                        record_file.writelines(lines)
-                return new_states
-            else:
-                LOG.info("Received error response from TLC, code: {}, text: {}".format(r.status_code, r.content))
-        except Exception as e:
-            LOG.info("Error received from TLC: {}".format(e))
-            pass
-
-        return 0
-    
-    def coverage(self):
-        return len(self.states.keys())
-
-    def reset(self):
-        self.states = {}
 
 class Fuzzer:
     def __init__(self, cluster_factory, config = {}) -> None:
@@ -234,7 +194,7 @@ class Fuzzer:
             new_config.mutations_per_trace = config["mutations_per_trace"]
         
         if "seed_population" not in config:
-            new_config.seed_population = 10
+            new_config.seed_population = 50
         else:
             new_config.seed_population = config["seed_population"]
 
@@ -276,8 +236,39 @@ class Fuzzer:
         LOG.info("Seeding for iteration {}".format(iter))
         self.trace_queue = []
         for i in range(self.config.seed_population):
-            (trace, _) = self.run_iteration("seed_{}_{}".format(iter, i))
-            self.trace_queue.append(trace)
+            crash_points = {}
+            start_points = {}
+            schedule = []
+            node_ids = list(range(1, self.config.nodes+1))
+            for c in random.sample(range(0, self.config.horizon, 2), self.config.crash_quota):
+                node_id = random.choice(node_ids)
+                crash_points[c] = node_id
+                s = random.choice(range(c, self.config.horizon))
+                start_points[s] = node_id
+
+            client_requests = random.sample(range(self.config.horizon), self.config.test_harness)
+            for choice in random.choices(node_ids, k=self.config.horizon):
+                max_messages = random.randint(0, self.config.max_messages_to_schedule)
+                schedule.append((choice, max_messages))
+
+            crashed = set()
+            trace = []
+            for j in range(self.config.horizon):
+                if j in start_points and start_points[j] in crashed:
+                    node_id = start_points[j]
+                    trace.append({"type": "Start", "node": node_id, "step": j})
+                    crashed.remove(node_id)
+                if j in crash_points:
+                    node_id = crash_points[j]
+                    trace.append({"type": "Crash", "node": node_id, "step": j})
+                    crashed.add(node_id)
+                if j in client_requests:
+                    trace.append({"type": "ClientRequest", "step": j})
+
+                trace.append({"type": "Schedule", "node": schedule[j][0], "step": j, "max_messages": schedule[j][1]})
+
+            self.trace_queue.append([e for e in trace])
+        LOG.info("Finished seeding")
 
     def run(self):
         LOG.info("Starting fuzzer loop")
@@ -363,7 +354,7 @@ class Fuzzer:
 
         cluster = self.cluster_factory(True)
 
-        LOG.debug("Creating cluster")
+        LOG.info("Creating cluster")
         cluster.create(self.config.nodes, wait=False)
         self.network.wait_for_nodes(self.config.nodes)
         event_trace = []
@@ -372,37 +363,27 @@ class Fuzzer:
                 LOG.debug("Taking step {}".format(i))
                 if i in start_points and start_points[i] in crashed:
                     node_id = start_points[i]
-                    LOG.debug("Starting crashed node")
-                    cluster.node(node_id).start()
+                    LOG.info("Starting crashed node")
+                    cluster.node(node_id).start(verify=False)
                     trace.append({"type": "Start", "node": node_id, "step": i})
                     self.network.add_event({"name": "Add", "params": {"i": node_id}})
                     crashed.remove(node_id)
                 
                 if i in crash_points:
-                    LOG.debug("Crashing node")
+                    LOG.info("Crashing node")
                     node_id = crash_points[i]
                     crashed.add(node_id)
                     if node_id in cluster.node_ids():
-                        cluster.node(node_id).terminate()
+                        cluster.node(node_id).terminate(check_error=False)
                     trace.append({"type": "Crash", "node": node_id, "step": i})
                     self.network.add_event({"name": "Remove", "params": {"i": node_id}})
-                                
-                for node_id in cluster.node_ids():
-                    LOG.debug("Updating state of node: {}".format(node_id))
-                    if node_id not in crashed:
-                        info = cluster.node(node_id).info()
-                        state = info['raft_role']
-                        lastlog_index = int(info["raft_current_index"])
-                        commit_index = int(info["raft_commit_index"])
-                        term = int(info["raft_current_term"])
-                        self.network.add_event({"name": "UpdateState", "params": {"i": node_id, "state": state, "last_index": lastlog_index, "commit_index": commit_index, "term": term}})
 
                 self.network.schedule_replica(schedule[i][0], schedule[i][1])
                 trace.append({"type": "Schedule", "node": schedule[i][0], "step": i, "max_messages": schedule[i][1]})
 
                 if i in client_requests:
                     try:
-                        LOG.debug("Executing client request")                        
+                        LOG.info("Executing client request")                        
                         cluster.execute_async('INCRBY', 'counter', 1, with_retry=False)
                     except:
                         pass
