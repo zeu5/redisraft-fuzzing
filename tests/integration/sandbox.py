@@ -49,17 +49,24 @@ class PipeLogger(threading.Thread):
         self.pipe = pipe
         self.daemon = True
         self.loglines = ""
+        self._stop_event = threading.Event()
         self.start()
 
     def run(self):
         try:
-            for line in iter(self.pipe.readline, b''):
+            while not self._stop_event.is_set():
+                line = self.pipe.readline()
+                if line == b'':
+                    break
                 linestr = str(line, 'utf-8').rstrip()
                 self.loglines += (linestr+"\n")
                 LOG.debug('%s: %s', self.prefix, linestr)
         except ValueError as err:
             LOG.debug("PipeLogger: %s", str(err))
             return
+        
+    def stop(self):
+        self._stop_event.set()
 
 
 class RawConnection(object):
@@ -360,7 +367,7 @@ class RedisRaft(object):
             if self.paused:
                 self.resume()
             try:
-                self.process.terminate()
+                self.process.kill()
 
                 try:
                     self.process.communicate(timeout=60)
@@ -371,12 +378,12 @@ class RedisRaft(object):
                 LOG.error('RedisRaft<%s> failed to terminate: %s',
                           self.id, err)
             else:
-                LOG.debug('RedisRaft<%s> terminated', self.id)
+                LOG.info('RedisRaft<%s> terminated', self.id)
 
         if self.stdout:
-            self.stdout.join(timeout=30)
+            self.stdout.stop()
         if self.stderr:
-            self.stderr.join(timeout=30)
+            self.stderr.stop()
 
         self.process = None
         if check_error:

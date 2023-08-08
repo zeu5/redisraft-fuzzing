@@ -17,7 +17,10 @@ from os import path
 from matplotlib import pyplot as plt
 from .workload import MultiWithLargeReply, MonotonicIncrCheck
 from .fuzzer import Fuzzer, RandomMutator, SwapMutator, CombinedMutator, SwapCrashNodesMutator
+from .fuzzer_guider import TraceGuider
 
+@pytest.mark.slow
+@pytest.mark.timeout(0)
 def test_fuzzing_with_fuzzer(fuzzer: Fuzzer):
     mutators = [("random", RandomMutator()), ("all_mutators", CombinedMutator([SwapMutator(), SwapCrashNodesMutator()]))]
     coverages = []
@@ -31,8 +34,22 @@ def test_fuzzing_with_fuzzer(fuzzer: Fuzzer):
         coverages.append((name, [c for c in fuzzer.stats["coverage"]]))
         stats[name] = {
             "random_traces": fuzzer.stats["random_traces"],
-            "mutated_traces": fuzzer.stats["mutated_traces"]
+            "mutated_traces": fuzzer.stats["mutated_traces"],
+            "runtime": fuzzer.stats["runtime"]
         }
+
+    # fuzzer.config.guider = TraceGuider(fuzzer.guider.tlc_addr, fuzzer.guider.record_path)
+    # fuzzer.reset()
+    # fuzzer.config.mutator = CombinedMutator([SwapMutator(), SwapCrashNodesMutator()])
+    # fuzzer.config.record_file_prefix = "traceCov_all_mutators"
+    # fuzzer.run()
+    # fuzzer.record_stats()
+    # coverages.append(("traceCov_all_mutators", [c for c in fuzzer.stats["coverage"]]))
+    # stats["traceCov_all_mutators"] = {
+    #     "random_traces": fuzzer.stats["random_traces"],
+    #     "mutated_traces": fuzzer.stats["mutated_traces"],
+    #     "runtime": fuzzer.stats["runtime"]
+    # }
         
     stats_path = path.join(fuzzer.config.report_path, "stats.json")
     with open(stats_path, "w") as stats_file:
