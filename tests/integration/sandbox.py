@@ -367,7 +367,7 @@ class RedisRaft(object):
             if self.paused:
                 self.resume()
             try:
-                self.process.kill()
+                self.process.terminate()
 
                 try:
                     self.process.communicate(timeout=60)
@@ -382,8 +382,18 @@ class RedisRaft(object):
 
         if self.stdout:
             self.stdout.stop()
+            try:
+                self.stdout.join(timeout=1)
+            except:
+                pass
         if self.stderr:
             self.stderr.stop()
+            try:
+                self.stderr.join(timeout=1)
+            except:
+                pass
+
+        LOG.info("RedisRaft<%s> termination completed", self.id)
 
         self.process = None
         if check_error:
