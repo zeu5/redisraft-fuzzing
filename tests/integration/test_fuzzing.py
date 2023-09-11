@@ -27,8 +27,7 @@ def test_fuzzing_with_fuzzer(fuzzer: Fuzzer):
     stats = {}
     for (name, m) in mutators:
         fuzzer.reset()
-        fuzzer.config.mutator = m
-        fuzzer.config.record_file_prefix = name
+        fuzzer.update_mutator(name, m)
         fuzzer.run()
         fuzzer.record_stats()
         coverages.append((name, [c for c in fuzzer.stats["coverage"]]))

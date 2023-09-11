@@ -140,6 +140,12 @@ class Fuzzer:
             "random_traces": 0,
             "mutated_traces": 0
         }
+
+    def update_mutator(self, name, mutator):
+        LOG.info("Updating mutator")
+        self.config.mutator = mutator
+        self.mutator = mutator
+        self.config.record_file_prefix = name
     
     def reset(self):
         self.network.clear_mailboxes()
@@ -179,7 +185,7 @@ class Fuzzer:
             new_config.horizon = config["horizon"]
 
         if "nodes" not in config:
-            new_config.nodes = 3
+            new_config.nodes = 5
         else:
             new_config.nodes = config["nodes"]
         
@@ -189,7 +195,7 @@ class Fuzzer:
             new_config.crash_quota = config["crash_quota"]
 
         if "mutations_per_trace" not in config:
-            new_config.mutations_per_trace = 5
+            new_config.mutations_per_trace = 3
         else:
             new_config.mutations_per_trace = config["mutations_per_trace"]
         
@@ -271,7 +277,7 @@ class Fuzzer:
         LOG.info("Finished seeding")
 
     def run(self):
-        LOG.info("Starting fuzzer loop")
+        LOG.info("Starting fuzzer loop"+ ("" if self.config.record_file_prefix == "" else " for: {}".format(self.config.record_file_prefix))) 
         start = time.time_ns()
         for i in range(self.config.iterations):
             LOG.info("Starting fuzzer iteration %d", i)
@@ -295,6 +301,7 @@ class Fuzzer:
                     for j in range(new_states * self.config.mutations_per_trace):
                         mutated_trace = self.mutator.mutate(trace)
                         if mutated_trace is not None:
+                            LOG.debug("Adding mutated trace")
                             self.trace_queue.append(mutated_trace)
                 self.stats["coverage"].append(self.guider.coverage())
         self.stats["runtime"] = time.time_ns() - start
