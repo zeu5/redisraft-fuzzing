@@ -98,7 +98,7 @@ class RawConnection(object):
 class RedisRaft(object):
     def __init__(self, _id, port, config, redis_args=None, raft_args=None,
                  use_id_arg=True, cluster_id=0, password=None,
-                 cacert_type=None):
+                 cacert_type=None, intercept_addr=None):
         self.id = _id
         self.cluster_id = cluster_id
         self.guid = str(uuid.uuid4())
@@ -121,8 +121,11 @@ class RedisRaft(object):
                       '--dbfilename', self._dbfilename,
                       '--loglevel', config.raft_loglevel]
         
+        
         if config.intercept:
             server_addr = config.fuzzer_config['network_addr']
+            if intercept_addr is not None:
+                server_addr = intercept_addr
             intercept_args = [
                 '--raft.use-test-network', "yes",
                 '--raft.test-network-server-addr', server_addr[0]+":"+str(server_addr[1]),
@@ -621,7 +624,7 @@ class RedisRaft(object):
 class Cluster(object):
     noleader_timeout = 30
 
-    def __init__(self, config, base_port=5000, base_id=0, cluster_id=0):
+    def __init__(self, config, base_port=5000, base_id=0, cluster_id=0, intercept_addr=None):
         self.next_id = base_id + 1
         self.cluster_id = cluster_id
         self.base_port = base_port
@@ -630,6 +633,7 @@ class Cluster(object):
         self.raft_args = None
         self.config = config
         self.thread_pool = ThreadPoolExecutor(max_workers=5)
+        self.intercept_addr = intercept_addr
 
     def nodes_count(self):
         return len(self.nodes)
@@ -654,7 +658,8 @@ class Cluster(object):
                                    raft_args=raft_args,
                                    cluster_id=self.cluster_id,
                                    password=password,
-                                   cacert_type=cacert_type)
+                                   cacert_type=cacert_type,
+                                   intercept_addr=self.intercept_addr)
                       for x in range(1, node_count + 1)}
         self.next_id = node_count + 1
         for _id, node in self.nodes.items():

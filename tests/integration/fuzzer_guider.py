@@ -85,3 +85,20 @@ class TraceGuider(TLCGuider):
     def reset(self):
         self.traces = {}
         return super().reset()
+    
+# 1. Compile the redisraft binary with coverage enabled
+# 2. Use a python gcov reader to read the data in json
+# 3. Parse json to figure out how many lines were covered
+# 4. (Optional) filter lines for the package we are interested in
+class LineCoverageGuider(TLCGuider):
+    def __init__(self, tlc_addr, record_path) -> None:
+        super(LineCoverageGuider, self).__init__(tlc_addr, record_path)
+        self.lines_covered = 0
+    
+    def check_new_state(self, trace, event_trace, name, record=False) -> int:
+        super().check_new_state(trace, event_trace, name, record)
+        return self.lines_covered
+    
+    def reset(self):
+        self.lines_covered = 0
+        return super().reset()
