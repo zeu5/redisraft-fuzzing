@@ -68,6 +68,10 @@ def pytest_addoption(parser):
         '--raft-election-timeout', default=1000,
         help="raft election timeout value"
     )
+    parser.addoption(
+        '--line-cov-path', default="",
+        help="path to record the line coverage data"
+    )
     
     parser.addoption(
         '--use-fuzzer', default=False, action='store_true',
@@ -140,6 +144,7 @@ def create_config(pytest_config):
     config.elle_num_ops = int(pytest_config.getoption('--elle-ops-per-tx'))
     config.raft_request_timeout = int(pytest_config.getoption('--raft-request-timeout'))
     config.raft_election_timeout = int(pytest_config.getoption('--raft-election-timeout'))
+    config.line_cov_path = pytest_config.getoption('--line-cov-path')
 
     if pytest_config.getoption('--valgrind'):
         if config.args is None:
@@ -260,11 +265,11 @@ def cluster_factory(request, elle):
 
 @pytest.fixture
 def cluster_creator(request):
-    def _cluster_creator(with_intercept=False, base_port=5000, cluster_id=0, intercept_addr=None):
+    def _cluster_creator(with_intercept=False, base_port=5000, cluster_id=0, base_intercept_listen_port=2023, intercept_addr=None):
         _config = create_config(request.config)
         if with_intercept:
             _config.intercept = True
-        _cluster = Cluster(_config, base_port=base_port, cluster_id=cluster_id, intercept_addr=intercept_addr)
+        _cluster = Cluster(_config, base_port=base_port, cluster_id=cluster_id, base_intercept_listen_port=base_intercept_listen_port, intercept_addr=intercept_addr)
         return _cluster
     
     yield _cluster_creator

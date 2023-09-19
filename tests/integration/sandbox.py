@@ -98,7 +98,7 @@ class RawConnection(object):
 class RedisRaft(object):
     def __init__(self, _id, port, config, redis_args=None, raft_args=None,
                  use_id_arg=True, cluster_id=0, password=None,
-                 cacert_type=None, intercept_addr=None):
+                 cacert_type=None, intercept_addr=None, intercept_listen_port=2024):
         self.id = _id
         self.cluster_id = cluster_id
         self.guid = str(uuid.uuid4())
@@ -121,6 +121,11 @@ class RedisRaft(object):
                       '--dbfilename', self._dbfilename,
                       '--loglevel', config.raft_loglevel]
         
+        self.env = None
+        if config.line_cov_path is not None:
+            self.env = {
+                "GCOV_PREFIX": config.line_cov_path
+            }
         
         if config.intercept:
             server_addr = config.fuzzer_config['network_addr']
@@ -129,9 +134,11 @@ class RedisRaft(object):
             intercept_args = [
                 '--raft.use-test-network', "yes",
                 '--raft.test-network-server-addr', server_addr[0]+":"+str(server_addr[1]),
-                '--raft.test-network-listen-addr', "127.0.0.1:"+str(2023+_id)
+                '--raft.test-network-listen-addr', "127.0.0.1:"+str(intercept_listen_port)
             ]
             self.args += intercept_args
+
+
 
         if password:
             self.args += ['--requirepass', password]
@@ -239,7 +246,7 @@ class RedisRaft(object):
             try:
                 return self.client.execute_command('RAFT.CLUSTER', *args)
             except redis.exceptions.RedisError as err:
-                LOG.debug(err)
+                LOG.error('RAFT.CLUSTER {} error {}'.format(" ".join(args), err))
                 if retries is not None:
                     retries -= 1
                     if retries <= 0:
@@ -247,14 +254,14 @@ class RedisRaft(object):
                         raise err
                 time.sleep(0.1)
 
-    def init(self, cluster_id=None):
+    def init(self, cluster_id=None, single_run=False):
         self.cleanup()
         self.start()
 
         if cluster_id is None:
-            dbid = self.cluster('init')
+            dbid = self.cluster('init', single_run=single_run)
         else:
-            dbid = self.cluster('init', cluster_id)
+            dbid = self.cluster('init', cluster_id, single_run=single_run)
 
         LOG.debug('Cluster created: %s', dbid)
         return self
@@ -278,6 +285,7 @@ class RedisRaft(object):
         self.process = subprocess.Popen(
             stdout=subprocess.PIPE, stderr=subprocess.PIPE,
             executable=self.executable,
+            env=self.env,
             args=args)
 
         self.stdout = PipeLogger(self.process.stdout,
@@ -381,7 +389,7 @@ class RedisRaft(object):
                 LOG.error('RedisRaft<%s> failed to terminate: %s',
                           self.id, err)
             else:
-                LOG.info('RedisRaft<%s> terminated', self.id)
+                LOG.debug('RedisRaft<%s> terminated', self.id)
 
         if self.stdout:
             self.stdout.stop()
@@ -396,7 +404,7 @@ class RedisRaft(object):
             except:
                 pass
 
-        LOG.info("RedisRaft<%s> termination completed", self.id)
+        LOG.debug("RedisRaft<%s> termination completed", self.id)
 
         self.process = None
         if check_error:
@@ -624,10 +632,11 @@ class RedisRaft(object):
 class Cluster(object):
     noleader_timeout = 30
 
-    def __init__(self, config, base_port=5000, base_id=0, cluster_id=0, intercept_addr=None):
+    def __init__(self, config, base_port=5000, base_id=0, cluster_id=0, base_intercept_listen_port= 2023, intercept_addr=None):
         self.next_id = base_id + 1
         self.cluster_id = cluster_id
         self.base_port = base_port
+        self.base_intercept_listen_port = base_intercept_listen_port
         self.nodes = {}
         self.leader = None
         self.raft_args = None
@@ -659,7 +668,8 @@ class Cluster(object):
                                    cluster_id=self.cluster_id,
                                    password=password,
                                    cacert_type=cacert_type,
-                                   intercept_addr=self.intercept_addr)
+                                   intercept_addr=self.intercept_addr,
+                                   intercept_listen_port=self.base_intercept_listen_port+x)
                       for x in range(1, node_count + 1)}
         self.next_id = node_count + 1
         for _id, node in self.nodes.items():

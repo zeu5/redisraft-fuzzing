@@ -7,6 +7,7 @@ from threading import Lock, Thread, Event
 import random
 import json
 import logging
+from datetime import datetime
 import time
 
 LOG = logging.getLogger('fuzzer')
@@ -143,6 +144,8 @@ class _Fuzzer_Synchronizer:
             "mutated_traces": 0
         }
         self.iteration = 0
+        self.completed_iterations = []
+        self.is_complete = False
         self.start_time = None
         self.logger = LOG.getChild("sync")
     
@@ -157,61 +160,70 @@ class _Fuzzer_Synchronizer:
         # Else if trace queue is empty, then create a new random trace and send
 
         iteration = 0
-        with self.lock:
-            iteration = self.iteration
-        
-        if iteration == self.config.iterations:
-            return ("", None)
-        elif iteration % self.config.seed_frequency == 0:
-            # Keep counter for number of iterations and reseed
-            self.seed()
-
         to_mimic = None
-        if len(self.trace_queue) > 0:
-            to_mimic = self.trace_queue.pop(0)
-        
-        if to_mimic is None:
-            to_mimic = self.get_random_trace()
-            with self.lock:
+        with self.lock:
+            if self.iteration == self.config.iterations:
+                return (0, None)
+            elif self.iteration % self.config.seed_frequency == 0:
+                # Keep counter for number of iterations and reseed
+                self.seed()
+
+            to_mimic = None
+            if len(self.trace_queue) > 0:
+                to_mimic = self.trace_queue.pop(0)
+            
+            if to_mimic is None:
+                to_mimic = self.get_random_trace()
                 self.stats["random_traces"] += 1
-        else:
-            with self.lock:
+            else:
                 self.stats["mutated_traces"] += 1
 
-        with self.lock:
+            iteration = self.iteration
             self.iteration +=1 
 
-        self.logger.info("Starting iteration: {}".format(iteration+1))
-        return (str(iteration+1), to_mimic)
+        self.logger.debug("Starting iteration: {}".format(iteration))
+        return (iteration, to_mimic)
 
     def record_logs(self, record_path, logs):
         with open(record_path, "w") as record_file:
             record_file.writelines(logs)
         
-    
     def update_iteration(self, iteration, trace, event_trace, logs):
+        self.logger.debug("Completed iteration: {}".format(iteration))
+        with self.lock:
+            self.completed_iterations.append(iteration)
+            is_complete = True
+            for i in range(0,self.config.iterations):
+                if i not in self.completed_iterations:
+                    is_complete = False
+
+            self.is_complete = is_complete
+
         if len(logs) != 0:
             record_file_path = path.join(self.config.report_path, "{}_{}.log".format(self.config.record_file_prefix, iteration))
             self.record_logs(record_file_path, logs)
 
-        new_states = self.guider.check_new_state(trace, event_trace, str(iteration), record=False)
-        if new_states > 0:
-            for j in range(new_states * self.config.mutations_per_trace):
-                mutated_trace = self.mutator.mutate(trace)
-                if mutated_trace is not None:
-                    self.logger.debug("Adding mutated trace")
-                    with self.lock:
-                        self.trace_queue.append(mutated_trace)
-
-    def get_iteration_no(self):
-        iteration = None
+        if len(trace) > 0 and len(event_trace) > 0:
+            new_states = self.guider.check_new_state(trace, event_trace, str(iteration), record=False)
+            if new_states > 0:
+                for j in range(new_states * self.config.mutations_per_trace):
+                    mutated_trace = self.mutator.mutate(trace)
+                    if mutated_trace is not None:
+                        self.logger.debug("Adding mutated trace")
+                        with self.lock:
+                            self.trace_queue.append(mutated_trace)
         with self.lock:
-            iteration = self.iteration
-        return iteration
+            self.stats["coverage"].append(self.guider.coverage())
+
+    def is_done(self):
+        with self.lock:
+            return self.is_complete
 
     def reset(self):
         self.guider.reset()
         with self.lock:
+            self.completed_iterations = []
+            self.is_complete = False
             self.trace_queue = []
             self.stats = {
                 "coverage" : [0],
@@ -271,17 +283,15 @@ class _Fuzzer_Synchronizer:
         new_traces = []
         for i in range(self.config.seed_population):            
             new_traces.append(self.get_random_trace())
-        
-        with self.lock:
-            self.trace_queue = new_traces
 
-        self.logger.info("Finished seeding")
+        self.trace_queue = new_traces
+        self.logger.debug("Finished seeding")
 
     def record_start(self):
-        self.start_time = time.time_ns()
+        self.start_time = datetime.now()
 
     def record_end(self):
-        self.stats["runtime"] = time.time_ns() - self.start_time
+        self.stats["runtime"] =  (datetime.now() - self.start_time).total_seconds()
 
 # A worker thread
 # 1. Waits for a trace from the synchronizer
@@ -314,7 +324,8 @@ class _Fuzzer_Worker:
     
     def get_cluster(self) -> Cluster:
         base_port = 5000+self.num*10
-        return self.cluster_factory(True, base_port=base_port, cluster_id=self.num, intercept_addr=self.intercept_addr)
+        base_listen_port=2023+self.num*10
+        return self.cluster_factory(True, base_port=base_port, cluster_id=self.num, base_intercept_listen_port=base_listen_port, intercept_addr=self.intercept_addr)
 
     def run_with(self, iteration, mimic):
 
@@ -336,14 +347,6 @@ class _Fuzzer_Worker:
                 schedule[ch["step"]] = (ch["node"], ch["max_messages"])
             elif ch["type"] == "ClientRequest":
                 client_requests[ch["step"]] = ch["op"]
-        
-        logger.info("iteration: {}: Creating cluster".format(self.num, iteration))
-        cluster = self.get_cluster()
-        cluster.create(self.config.nodes, wait=False)
-        self.network.wait_for_nodes(self.config.nodes)
-
-        trace = []
-        logs = []
 
         def get_logs(cluster):
             lines = []
@@ -357,6 +360,20 @@ class _Fuzzer_Worker:
                     lines.append(line+"\n")
                 lines.append("\n\n")
             return lines
+        
+        logger.info("iteration: {}: Creating cluster".format(self.num, iteration))
+        cluster = self.get_cluster()
+        try:
+            cluster.create(self.config.nodes, wait=False)
+        except:
+            self.network.clear_mailboxes()
+            self.sync.update_iteration(iteration, [], [], get_logs(cluster))
+            return
+        
+        self.network.wait_for_nodes(self.config.nodes)
+
+        trace = []
+        logs = []
 
         try:
             for i in range(self.config.horizon):
@@ -366,14 +383,14 @@ class _Fuzzer_Worker:
                 logger.debug("Taking step {}".format(i))
                 if i in start_points and start_points[i] in crashed:
                     node_id = start_points[i]
-                    logger.info("Starting crashed node")
+                    logger.debug("Starting crashed node")
                     cluster.node(node_id).start(verify=False)
                     trace.append({"type": "Start", "node": node_id, "step": i})
                     self.network.add_event({"name": "Add", "params": {"i": node_id}})
                     crashed.remove(node_id)
                 
                 if i in crash_points:
-                    logger.info("Crashing node")
+                    logger.debug("Crashing node")
                     node_id = crash_points[i]
                     crashed.add(node_id)
                     if node_id in cluster.node_ids():
@@ -386,7 +403,7 @@ class _Fuzzer_Worker:
 
                 if i in client_requests:
                     try:
-                        logger.info("Executing client request")
+                        logger.debug("Executing client request")
                         if client_requests[i] == "read":
                             cluster.execute_async('GET')
                         else:
@@ -394,7 +411,6 @@ class _Fuzzer_Worker:
                     except:
                         pass
                     trace.append({"type": "ClientRequest", "step": i})
-
                 time.sleep(0.005)
         except:
             logs = get_logs(cluster)
@@ -412,6 +428,7 @@ class _Fuzzer_Worker:
 
     def run(self):
         self._stop_event = Event()
+        self.logger.info("Running")
         (iteration, mimic) = self.sync.get_trace()
         while mimic is not None:
             if self._stop_event.is_set():
@@ -545,11 +562,11 @@ class Fuzzer:
         self.sync.record_start()
 
         for t in self.worker_threads:
-            t.run()
+            t.start()
 
         while True:
             # Poll the sync if it is done
-            if self.sync.get_iteration_no() == self.config.iterations:
+            if self.sync.is_done():
                 break
             time.sleep(0.05)
 

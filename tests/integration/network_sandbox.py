@@ -8,8 +8,6 @@ import requests
 import json
 import logging
 
-LOG = logging.getLogger('fuzzer-network')
-
 class Request:
     def __init__(self, method, path, headers,  content: str, query=None) -> None:
         self.path = path
@@ -157,7 +155,7 @@ class Network:
         self.event_trace = []
         self.request_ctr = 1
         self.request_map = {}
-
+        self.logger = logging.getLogger("fuzzer-network {}".format(self.addr))
 
         router = Router()
         router.add_route("/replica", self._handle_replica)
@@ -175,7 +173,7 @@ class Network:
         self.server_thread.join()
     
     def _handle_replica(self, request: Request) -> Response:
-        LOG.debug("Received replica: {}".format(request.content))
+        self.logger.debug("Received replica: {}".format(request.content))
         replica = json.loads(request.content)
         if "id" in replica:
             try:
@@ -246,7 +244,7 @@ class Network:
         return {}
 
     def _handle_message(self, request: Request) -> Response:
-        LOG.debug("Received message: {}".format(request.content))
+        self.logger.debug("Received message: {}".format(request.content))
         msg = Message.from_str(request.content)
         if msg is not None:
             try:
@@ -290,7 +288,7 @@ class Network:
             return event["params"]
     
     def _handle_event(self, request: Request) -> Response:
-        LOG.debug("Received event: {}".format(request.content))
+        self.logger.debug("Received event: {}".format(request.content))
         event = json.loads(request.content)
         if "replica" in event:
             try:
@@ -361,7 +359,7 @@ class Network:
 
         for next_msg in messages_to_deliver:
             msg_s = json.dumps(next_msg.to_obj())
-            LOG.debug("Sending message: {}".format(msg_s))
+            self.logger.debug("Sending message: {} to {}".format(msg_s, addr))
             self.add_event({"name": "DeliverMessage", "params": self._get_message_event_params(next_msg)})
             try:
                 requests.post("http://"+addr+"/message", json=next_msg.to_obj())

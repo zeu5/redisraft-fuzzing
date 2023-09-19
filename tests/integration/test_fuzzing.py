@@ -30,12 +30,12 @@ def test_fuzzing_with_fuzzer(fuzzer: Fuzzer):
         fuzzer.update_mutator(name, m)
         fuzzer.run()
         fuzzer.record_stats()
-        stats = fuzzer.get_stats()
-        coverages.append((name, [c for c in stats["coverage"]]))
+        s = fuzzer.get_stats()
+        coverages.append((name, [c for c in s["coverage"]]))
         stats[name] = {
-            "random_traces": stats["random_traces"],
-            "mutated_traces": stats["mutated_traces"],
-            "runtime": stats["runtime"]
+            "random_traces": s["random_traces"],
+            "mutated_traces": s["mutated_traces"],
+            "runtime": s["runtime"]
         }
 
     # fuzzer.config.guider = TraceGuider(fuzzer.guider.tlc_addr, fuzzer.guider.record_path)
