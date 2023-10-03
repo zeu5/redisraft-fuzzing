@@ -121,11 +121,10 @@ class RedisRaft(object):
                       '--dbfilename', self._dbfilename,
                       '--loglevel', config.raft_loglevel]
         
-        self.env = None
+        self.env = os.environ.copy()
         if config.line_cov_path is not None:
-            self.env = {
-                "GCOV_PREFIX": config.line_cov_path
-            }
+            self.env["GCOV_PREFIX"] = config.line_cov_path
+            self.env["GCOV_PREFIX_STRIP"] = "0"
         
         if config.intercept:
             server_addr = config.fuzzer_config['network_addr']
@@ -285,7 +284,6 @@ class RedisRaft(object):
         self.process = subprocess.Popen(
             stdout=subprocess.PIPE, stderr=subprocess.PIPE,
             executable=self.executable,
-            env=self.env,
             args=args)
 
         self.stdout = PipeLogger(self.process.stdout,
@@ -730,10 +728,12 @@ class Cluster(object):
     def get_log_lines(self):
         log_lines = {}
         for _id, node in self.nodes.items():
-            log_lines[_id] = {
-                "stdout": node.stdout.loglines.split("\n"),
-                "stderr": node.stderr.loglines.split("\n")
-            }
+            log_lines[_id] = {"stdout": [], "stderr": []}
+            if node.stdout is not None and node.stderr is not None:
+                log_lines[_id] = {
+                    "stdout": node.stdout.loglines.split("\n"),
+                    "stderr": node.stderr.loglines.split("\n")
+                }
         return log_lines
 
     def reset_leader(self):
@@ -975,10 +975,9 @@ class Elle(object):
             self.index[thread] = 1
 
         output = self.generate_command_output(thread, ops, "invoke")
-        self.lock.acquire()
-        self.logfile.write(output)
-        self.logfile.write("\n")
-        self.lock.release()
+        with self.lock:
+            self.logfile.write(output)
+            self.logfile.write("\n")
 
     @staticmethod
     def generate_results_value(results: typing.List, ops: typing.List[ElleOp]):
@@ -1025,15 +1024,14 @@ class Elle(object):
         self.index[thread] += 1
 
         output = self.generate_result_output(thread, result, results, ops)
-        self.lock.acquire()
-        self.logfile.write(output)
-        self.logfile.write("\n")
-        self.lock.release()
+        with self.lock:
+            self.logfile.write(output)
+            self.logfile.write("\n")
+
 
     def log_comment(self, msg: str):
-        self.lock.acquire()
-        self.logfile.write("; " + msg + "\n")
-        self.lock.release()
+        with self.lock:
+            self.logfile.write("; " + msg + "\n")
 
     def get_next_value(self):
         with self.lock:

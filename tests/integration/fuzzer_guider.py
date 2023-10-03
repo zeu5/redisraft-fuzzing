@@ -2,8 +2,9 @@
 import requests
 import logging
 import json
-from os import path
+from os import path, makedirs
 from hashlib import sha256
+from .line_coverage import read_report, create_options, SummarizedStats
 
 LOG = logging.getLogger('fuzzer')
 
@@ -52,6 +53,8 @@ def create_event_graph(event_trace):
     nodes = {}
 
     for e in event_trace:
+        if "replica" not in e["params"]:
+            LOG.info("{}".format(json.dumps(e)))
         replica = e["params"]["replica"]
         node = {"name": e["name"], "params": e["params"], "replica": replica}
         if replica in cur_event:
@@ -86,19 +89,53 @@ class TraceGuider(TLCGuider):
         self.traces = {}
         return super().reset()
     
-# 1. Compile the redisraft binary with coverage enabled
-# 2. Use a python gcov reader to read the data in json
-# 3. Parse json to figure out how many lines were covered
-# 4. (Optional) filter lines for the package we are interested in
 class LineCoverageGuider(TLCGuider):
-    def __init__(self, tlc_addr, record_path) -> None:
+    def __init__(self, tlc_addr, record_path, root) -> None:
         super(LineCoverageGuider, self).__init__(tlc_addr, record_path)
         self.lines_covered = 0
+        self.root = root
     
     def check_new_state(self, trace, event_trace, name, record=False) -> int:
         super().check_new_state(trace, event_trace, name, record)
-        return self.lines_covered
+        old_lines_coverage = self.lines_covered
+        LOG.debug("Getting line coverage info from: {}".format(self.root))
+        try:
+            self.lines_covered = read_linecov_data(self.root)
+            LOG.info("Lines covered: {}".format(self.lines_covered))
+        except Exception as e:
+            LOG.info("Error reading line coverage: {}".format(e))
+        return self.lines_covered - old_lines_coverage
     
     def reset(self):
         self.lines_covered = 0
         return super().reset()
+    
+
+def read_linecov_data(root):
+    parser_options = create_options(root)
+    data = read_report(parser_options)
+
+    stats = SummarizedStats.from_covdata(data)
+    return stats.line.covered
+
+def get_guider(t, fuzzer_config, config):
+    report_path = "fuzzer_report"
+    if "report_path" in fuzzer_config:
+        report_path = fuzzer_config["report_path"]
+
+    makedirs(report_path, exist_ok=True)
+    record_file_prefix = t
+    tlc_record_path = path.join(report_path, record_file_prefix+"_traces")
+    makedirs(tlc_record_path, exist_ok=True)
+    tlc_addr = "127.0.0.1:2023"
+    if "tlc_addr" in fuzzer_config:
+        tlc_addr = fuzzer_config["tlc_addr"]
+
+    if t == "trace":
+        return TraceGuider(tlc_addr, tlc_record_path)
+    elif t == "tlc":
+        return TLCGuider(tlc_addr, tlc_record_path)
+    elif t == "line":
+        if config.line_cov_path is not None:
+            return LineCoverageGuider(tlc_addr, tlc_record_path, config.line_cov_path)
+    return None

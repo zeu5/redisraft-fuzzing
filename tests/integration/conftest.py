@@ -69,7 +69,7 @@ def pytest_addoption(parser):
         help="raft election timeout value"
     )
     parser.addoption(
-        '--line-cov-path', default="fuzzer_coverage",
+        '--line-cov-path', default="build/deps/raft/CMakeFiles/raft.dir/src",
         help="path to record the line coverage data"
     )
     
@@ -295,3 +295,7 @@ def fuzzer(request, cluster_creator):
     yield _fuzzer
 
     _fuzzer.shutdown()
+
+@pytest.fixture
+def config(request):
+    yield create_config(request.config)

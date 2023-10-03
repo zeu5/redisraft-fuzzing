@@ -17,17 +17,22 @@ from os import path
 from matplotlib import pyplot as plt
 from .workload import MultiWithLargeReply, MonotonicIncrCheck
 from .fuzzer import Fuzzer, RandomMutator, SwapMutator, CombinedMutator, SwapCrashNodesMutator
-from .fuzzer_guider import TraceGuider
+from .fuzzer_guider import get_guider
 
 @pytest.mark.slow
 @pytest.mark.timeout(0)
-def test_fuzzing_with_fuzzer(fuzzer: Fuzzer):
-    mutators = [("random", RandomMutator()), ("all_mutators", CombinedMutator([SwapMutator(), SwapCrashNodesMutator()]))]
+def test_fuzzing_with_fuzzer(fuzzer: Fuzzer, config):
+    benchmarks = [
+        ("line", get_guider("line", config.fuzzer_config, config), CombinedMutator([SwapMutator(), SwapCrashNodesMutator()])),
+        # ("random", get_guider("tlc", config.fuzzer_config, config), RandomMutator()), 
+        # ("tlc", get_guider("tlc", config.fuzzer_config, config), CombinedMutator([SwapMutator(), SwapCrashNodesMutator()])),
+        # ("trace", get_guider("trace", config.fuzzer_config, config), CombinedMutator([SwapMutator(), SwapCrashNodesMutator()]))
+    ]
     coverages = []
     stats = {}
-    for (name, m) in mutators:
+    for (name, g, m) in benchmarks:
         fuzzer.reset()
-        fuzzer.update_mutator(name, m)
+        fuzzer.update_gm(name, g, m)
         fuzzer.run()
         fuzzer.record_stats()
         s = fuzzer.get_stats()
@@ -37,19 +42,6 @@ def test_fuzzing_with_fuzzer(fuzzer: Fuzzer):
             "mutated_traces": s["mutated_traces"],
             "runtime": s["runtime"]
         }
-
-    # fuzzer.config.guider = TraceGuider(fuzzer.guider.tlc_addr, fuzzer.guider.record_path)
-    # fuzzer.reset()
-    # fuzzer.config.mutator = CombinedMutator([SwapMutator(), SwapCrashNodesMutator()])
-    # fuzzer.config.record_file_prefix = "traceCov_all_mutators"
-    # fuzzer.run()
-    # fuzzer.record_stats()
-    # coverages.append(("traceCov_all_mutators", [c for c in fuzzer.stats["coverage"]]))
-    # stats["traceCov_all_mutators"] = {
-    #     "random_traces": fuzzer.stats["random_traces"],
-    #     "mutated_traces": fuzzer.stats["mutated_traces"],
-    #     "runtime": fuzzer.stats["runtime"]
-    # }
         
     stats_path = path.join(fuzzer.config.report_path, "stats.json")
     with open(stats_path, "w") as stats_file:

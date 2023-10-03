@@ -149,9 +149,10 @@ class _Fuzzer_Synchronizer:
         self.start_time = None
         self.logger = LOG.getChild("sync")
     
-    def update_mutator(self, name, mutator):
-        self.logger.info("Updating mutator")
+    def update_gm(self, name, guider, mutator):
+        self.logger.info("Updating guider and mutator")
         self.mutator = mutator
+        self.guider = guider
         self.config.record_file_prefix = name
 
     def get_trace(self):
@@ -190,30 +191,32 @@ class _Fuzzer_Synchronizer:
         
     def update_iteration(self, iteration, trace, event_trace, logs):
         self.logger.debug("Completed iteration: {}".format(iteration))
-        with self.lock:
-            self.completed_iterations.append(iteration)
-            is_complete = True
-            for i in range(0,self.config.iterations):
-                if i not in self.completed_iterations:
-                    is_complete = False
 
-            self.is_complete = is_complete
+        try:
+            if len(logs) != 0:
+                record_file_path = path.join(self.config.report_path, "{}_{}.log".format(self.config.record_file_prefix, iteration))
+                self.record_logs(record_file_path, logs)
 
-        if len(logs) != 0:
-            record_file_path = path.join(self.config.report_path, "{}_{}.log".format(self.config.record_file_prefix, iteration))
-            self.record_logs(record_file_path, logs)
-
-        if len(trace) > 0 and len(event_trace) > 0:
-            new_states = self.guider.check_new_state(trace, event_trace, str(iteration), record=False)
-            if new_states > 0:
-                for j in range(new_states * self.config.mutations_per_trace):
-                    mutated_trace = self.mutator.mutate(trace)
-                    if mutated_trace is not None:
-                        self.logger.debug("Adding mutated trace")
-                        with self.lock:
-                            self.trace_queue.append(mutated_trace)
-        with self.lock:
-            self.stats["coverage"].append(self.guider.coverage())
+            if len(trace) > 0 and len(event_trace) > 0:
+                new_states = self.guider.check_new_state(trace, event_trace, str(iteration), record=False)
+                if new_states > 0:
+                    for j in range(new_states * self.config.mutations_per_trace):
+                        mutated_trace = self.mutator.mutate(trace)
+                        if mutated_trace is not None:
+                            self.logger.debug("Adding mutated trace")
+                            with self.lock:
+                                self.trace_queue.append(mutated_trace)
+        except:
+            pass
+        finally:
+            with self.lock:
+                self.stats["coverage"].append(self.guider.coverage())
+                self.completed_iterations.append(iteration)
+                is_complete = True
+                for i in range(0,self.config.iterations):
+                    if i not in self.completed_iterations:
+                        is_complete = False
+                self.is_complete = is_complete
 
     def is_done(self):
         with self.lock:
@@ -312,7 +315,9 @@ class _Fuzzer_Worker:
         self.logger = LOG.getChild("Worker {}".format(num))
 
     def stop(self):
-        self._stop_event.set()
+        if not self._stop_event.is_set():
+            self.logger.info("Stopping")
+            self._stop_event.set()
     
     def shutdown(self):
         self.logger.info("Shuting down")
@@ -361,14 +366,20 @@ class _Fuzzer_Worker:
                 lines.append("\n\n")
             return lines
         
-        logger.info("iteration: {}: Creating cluster".format(self.num, iteration))
+        logger.debug("Creating cluster")
         cluster = self.get_cluster()
         try:
             cluster.create(self.config.nodes, wait=False)
-        except:
+        except Exception as e:
+            logger.info("Error creating cluster: {}".format(e))
+            try:
+                cluster.destroy()
+            except:
+                pass
             self.network.clear_mailboxes()
             self.sync.update_iteration(iteration, [], [], get_logs(cluster))
             return
+        logger.debug("Created cluster")
         
         self.network.wait_for_nodes(self.config.nodes)
 
@@ -386,7 +397,7 @@ class _Fuzzer_Worker:
                     logger.debug("Starting crashed node")
                     cluster.node(node_id).start(verify=False)
                     trace.append({"type": "Start", "node": node_id, "step": i})
-                    self.network.add_event({"name": "Add", "params": {"i": node_id}})
+                    self.network.add_event({"name": "Add", "params": {"i": node_id, "replica": node_id}})
                     crashed.remove(node_id)
                 
                 if i in crash_points:
@@ -396,7 +407,7 @@ class _Fuzzer_Worker:
                     if node_id in cluster.node_ids():
                         cluster.node(node_id).terminate(check_error=False)
                     trace.append({"type": "Crash", "node": node_id, "step": i})
-                    self.network.add_event({"name": "Remove", "params": {"i": node_id}})
+                    self.network.add_event({"name": "Remove", "params": {"i": node_id, "replica": node_id}})
 
                 self.network.schedule_replica(schedule[i][0], schedule[i][1])
                 trace.append({"type": "Schedule", "node": schedule[i][0], "step": i, "max_messages": schedule[i][1]})
@@ -412,8 +423,10 @@ class _Fuzzer_Worker:
                         pass
                     trace.append({"type": "ClientRequest", "step": i})
                 time.sleep(0.005)
-        except:
+        except Exception as e:
+            logger.info("Error running iteration: {}, {}".format(iteration, str(e)))
             logs = get_logs(cluster)
+        finally:
             logger.debug("Destroying cluster")
             try:
                 cluster.destroy()
@@ -428,13 +441,16 @@ class _Fuzzer_Worker:
     def run(self):
         self._stop_event = Event()
         self.logger.info("Running")
-        (iteration, mimic) = self.sync.get_trace()
-        while mimic is not None:
-            if self._stop_event.is_set():
-                break
-            LOG.info("Worker: {}, iteration: {}".format(self.num, iteration))
-            self.run_with(iteration, mimic)
+        while not self.sync.is_done():
             (iteration, mimic) = self.sync.get_trace()
+            if self._stop_event.is_set() or mimic is None:
+                break
+            self.logger.info("iteration: {}".format(iteration))
+            try:
+                self.run_with(iteration, mimic)
+            except Exception as e:
+                message = getattr(e, "message", repr(e))
+                self.logger.info("iteration: {}, error running: {}".format(iteration, message))
 
         self.stop()
         
@@ -451,8 +467,8 @@ class Fuzzer:
     def get_stats(self):
         return self.sync.get_stats()
 
-    def update_mutator(self, name, mutator):
-        self.sync.update_mutator(name, mutator)
+    def update_gm(self, name, guider, mutator):
+        self.sync.update_gm(name, guider, mutator)
     
     def reset(self):
         if len(self.worker_threads) != 0:

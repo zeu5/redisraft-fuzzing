@@ -176,12 +176,9 @@ class Network:
         self.logger.debug("Received replica: {}".format(request.content))
         replica = json.loads(request.content)
         if "id" in replica:
-            try:
-                self.lock.acquire()
+            with self.lock:
                 replica_id = int(replica["id"])
                 self.replicas[replica_id] = replica
-            finally:
-                self.lock.release()
 
         return Response.json(HTTPStatus.OK, json.dumps({"message": "Ok"}))
     
@@ -247,15 +244,14 @@ class Network:
         self.logger.debug("Received message: {}".format(request.content))
         msg = Message.from_str(request.content)
         if msg is not None:
-            try:
-                self.lock.acquire()
-                mailbox_key = int(msg.to)
+            mailbox_key = int(msg.to)
+            with self.lock:
                 if mailbox_key not in self.mailboxes:
                     self.mailboxes[mailbox_key] = []
                 self.mailboxes[mailbox_key].append(msg)
-            finally:
-                self.lock.release()
-            self.add_event({"name": "SendMessage", "params": self._get_message_event_params(msg)})
+            send_event_params = self._get_message_event_params(msg)
+            send_event_params["replica"] = mailbox_key
+            self.add_event({"name": "SendMessage", "params": send_event_params})
 
         return Response.json(HTTPStatus.OK, json.dumps({"message": "Ok"}))
     
@@ -291,60 +287,47 @@ class Network:
         self.logger.debug("Received event: {}".format(request.content))
         event = json.loads(request.content)
         if "replica" in event:
-            try:
-                e = {"name": event["type"], "params": self._map_event_params(event)}
-                e["params"]["replica"] = event["replica"]
-                self.lock.acquire()
+            e = {"name": event["type"], "params": self._map_event_params(event)}
+            e["params"]["replica"] = event["replica"]
+            with self.lock:
                 self.event_trace.append(e)
-            finally:
-                self.lock.release()
 
         return Response.json(HTTPStatus.OK, json.dumps({"message": "Ok"}))
 
     def wait_for_nodes(self, no_nodes):
         while True:
             done = False
-            try:
-                self.lock.acquire()
+            with self.lock:
                 if len(list(self.replicas.keys())) == no_nodes:
                     done = True
-            finally:
-                self.lock.release()
+
             if done:
                 break
             time.sleep(0.05)
     
     def get_replicas(self):
         replicas = []
-        try:
-            self.lock.acquire()
+        with self.lock:
             replicas = list(self.replicas.items())
-        finally:
-            self.lock.release()
+
         return replicas
     
     def get_event_trace(self):
         event_trace = []
-        try:
-            self.lock.acquire()
+        with self.lock:
             for e in self.event_trace:
                 event_trace.append(e)
-        finally:
-            self.lock.release()
+
         return event_trace
     
     def add_event(self, e):
-        try:
-            self.lock.acquire()
+        with self.lock:
             self.event_trace.append(e)
-        finally:
-            self.lock.release()
     
     def schedule_replica(self, replica, max_messages):
         addr = ""
         messages_to_deliver = []
-        try:
-            self.lock.acquire()
+        with self.lock:
             if replica in self.mailboxes and len(self.mailboxes[replica]) > 0:
                 for (i,m) in enumerate(self.mailboxes[replica]):
                     if i < max_messages:
@@ -354,27 +337,24 @@ class Network:
                 else:
                     self.mailboxes[replica] = []
                 addr = self.replicas[replica]["addr"]
-        finally:
-            self.lock.release()
 
         for next_msg in messages_to_deliver:
             msg_s = json.dumps(next_msg.to_obj())
             self.logger.debug("Sending message: {} to {}".format(msg_s, addr))
-            self.add_event({"name": "DeliverMessage", "params": self._get_message_event_params(next_msg)})
+            receive_event_params = self._get_message_event_params(next_msg)
+            receive_event_params["replica"] = replica
+            self.add_event({"name": "DeliverMessage", "params": receive_event_params})
             try:
                 requests.post("http://"+addr+"/message", json=next_msg.to_obj())
             except:
                 pass
 
     def clear_mailboxes(self):
-        try:
-            self.lock.acquire()
+        with self.lock:
             for key in self.mailboxes:
                 self.mailboxes[key] = []
             self.event_trace = []
             self.replicas = {}
-        finally:
-            self.lock.release()
 
 
 if __name__ == "__main__":
