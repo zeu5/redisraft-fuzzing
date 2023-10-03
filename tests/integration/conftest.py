@@ -69,7 +69,7 @@ def pytest_addoption(parser):
         help="raft election timeout value"
     )
     parser.addoption(
-        '--line-cov-path', default="",
+        '--line-cov-path', default="fuzzer_coverage",
         help="path to record the line coverage data"
     )
     

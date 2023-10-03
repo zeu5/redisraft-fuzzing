@@ -414,7 +414,6 @@ class _Fuzzer_Worker:
                 time.sleep(0.005)
         except:
             logs = get_logs(cluster)
-        finally:
             logger.debug("Destroying cluster")
             try:
                 cluster.destroy()
