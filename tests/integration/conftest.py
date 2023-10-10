@@ -103,6 +103,16 @@ def pytest_addoption(parser):
         help='number of worker threads'
     )
 
+    parser.addoption(
+        "--fuzzer-nodes", default=3,
+        help="number of nodes to run the fuzzer"
+    )
+
+    parser.addoption(
+        "--fuzzer-requests", default=3,
+        help="number of requests to inject when running the fuzzer"
+    )
+
 def pytest_generate_tests(metafunc):
     if metafunc.config.option.repeat is not None:
         count = int(metafunc.config.option.repeat)
@@ -177,6 +187,8 @@ def create_config(pytest_config):
     config.fuzzer_config["mutator"] = pytest_config.getoption('--fuzzer-mutator')
     config.fuzzer_config["report_path"] = pytest_config.getoption('--fuzzer-report-path')
     config.fuzzer_config["worker_threads"] = int(pytest_config.getoption('--fuzzer-worker-threads'))
+    config.fuzzer_config["nodes"] = int(pytest_config.getoption('--fuzzer-nodes'))
+    config.fuzzer_config["test_harness"] = int(pytest_config.getoption('--fuzzer-requests'))
 
     return config
 
@@ -290,11 +302,8 @@ def workload():
 def fuzzer(request, cluster_creator):
     _config = create_config(request.config)
     _fuzzer = Fuzzer(cluster_creator, _config.fuzzer_config)
-    _fuzzer.start()
-
+    
     yield _fuzzer
-
-    _fuzzer.shutdown()
 
 @pytest.fixture
 def config(request):

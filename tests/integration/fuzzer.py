@@ -132,7 +132,7 @@ class CombinedMutator:
 # Encode all the calls that the workers need to synchronize on
 # The main fuzzer class will create and pass this to all workers
 class _Fuzzer_Synchronizer:
-    def __init__(self, config) -> None:
+    def __init__(self, config, target_iterations) -> None:
         self.lock = Lock()
         self.trace_queue = []
         self.config = config
@@ -143,7 +143,9 @@ class _Fuzzer_Synchronizer:
             "random_traces": 0,
             "mutated_traces": 0
         }
+        self.target_iterations = target_iterations
         self.iteration = 0
+        self.iteration_offset = 0
         self.completed_iterations = []
         self.is_complete = False
         self.start_time = None
@@ -163,7 +165,7 @@ class _Fuzzer_Synchronizer:
         iteration = 0
         to_mimic = None
         with self.lock:
-            if self.iteration == self.config.iterations:
+            if self.iteration - self.iteration_offset == self.target_iterations:
                 return (0, None)
             elif self.iteration % self.config.seed_frequency == 0:
                 # Keep counter for number of iterations and reseed
@@ -213,14 +215,24 @@ class _Fuzzer_Synchronizer:
                 self.stats["coverage"].append(self.guider.coverage())
                 self.completed_iterations.append(iteration)
                 is_complete = True
-                for i in range(0,self.config.iterations):
+                for i in range(self.iteration_offset,self.target_iterations+self.iteration_offset):
                     if i not in self.completed_iterations:
                         is_complete = False
+                        break
                 self.is_complete = is_complete
 
     def is_done(self):
         with self.lock:
             return self.is_complete
+
+    def reset_offset(self, offset):
+        with self.lock:
+            self.completed_iterations = []
+            self.is_complete = False
+            self.trace_queue = []
+            self.iteration_offset = offset
+            self.iteration = offset
+
 
     def reset(self):
         self.guider.reset()
@@ -228,6 +240,7 @@ class _Fuzzer_Synchronizer:
             self.completed_iterations = []
             self.is_complete = False
             self.trace_queue = []
+            self.iteration_offset = 0
             self.stats = {
                 "coverage" : [0],
                 "random_traces": 0,
@@ -310,7 +323,7 @@ class _Fuzzer_Worker:
         self.config = config
         (addr, port) = self.config.network_addr
         self.intercept_addr=(addr, port+num)
-        self.network = Network(self.intercept_addr)
+        self.network = None
         self._stop_event = Event()
         self.logger = LOG.getChild("Worker {}".format(num))
 
@@ -321,11 +334,15 @@ class _Fuzzer_Worker:
     
     def shutdown(self):
         self.logger.info("Shuting down")
-        self.network.shutdown()
+        if self.network is not None:
+            self.network.shutdown()
+            self.network = None
 
     def start(self):
         self.logger.info("Starting")
-        self.network.run()
+        if self.network is None:
+            self.network = Network(self.intercept_addr)
+            self.network.run()
     
     def get_cluster(self) -> Cluster:
         base_port = 5000+self.num*10
@@ -369,7 +386,10 @@ class _Fuzzer_Worker:
         logger.debug("Creating cluster")
         cluster = self.get_cluster()
         try:
+            start = datetime.now()
             cluster.create(self.config.nodes, wait=False)
+            end = datetime.now()
+            logger.info("Cluster creation time: {}".format((end-start).total_seconds()))
         except Exception as e:
             logger.info("Error creating cluster: {}".format(e))
             try:
@@ -386,6 +406,7 @@ class _Fuzzer_Worker:
         trace = []
         logs = []
 
+        start=datetime.now()
         try:
             for i in range(self.config.horizon):
                 if self._stop_event.is_set():
@@ -421,15 +442,20 @@ class _Fuzzer_Worker:
                             cluster.execute_async('INCRBY', 'counter', 1, with_retry=False)
                     except:
                         pass
-                    trace.append({"type": "ClientRequest", "step": i})
+                    trace.append({"type": "ClientRequest", "step": i, "op": client_requests[i]})
                 time.sleep(0.005)
         except Exception as e:
             logger.info("Error running iteration: {}, {}".format(iteration, str(e)))
             logs = get_logs(cluster)
         finally:
             logger.debug("Destroying cluster")
+            end = datetime.now()
+            logger.info("Iteration running time: {}".format((end-start).total_seconds()))
             try:
+                start = datetime.now()
                 cluster.destroy()
+                end = datetime.now()
+                logger.info("Cluster termination time: {}".format((end-start).total_seconds()))
             except:
                 logs = get_logs(cluster)
 
@@ -458,7 +484,7 @@ class _Fuzzer_Worker:
 class Fuzzer:
     def __init__(self, cluster_factory, config = {}) -> None:
         self.config = self._validate_config(config)
-        self.sync = _Fuzzer_Synchronizer(self.config)
+        self.sync = _Fuzzer_Synchronizer(self.config, 1000)
         self.cluster_factor = cluster_factory
         self.workers = [_Fuzzer_Worker(self.sync, i, self.cluster_factor, self.config) for i in range(0, self.config.num_workers)]
 
@@ -522,11 +548,11 @@ class Fuzzer:
             new_config.mutations_per_trace = config["mutations_per_trace"]
         
         if "seed_population" not in config:
-            new_config.seed_population = 50
+            new_config.seed_population = 20
         else:
             new_config.seed_population = config["seed_population"]
 
-        new_config.seed_frequency = 1000
+        new_config.seed_frequency = 100
         if "seed_frequency" in config:
             new_config.seed_frequency = config["seed_frequency"]
         
@@ -565,29 +591,41 @@ class Fuzzer:
         return new_config
     
     def start(self):
-        LOG.info("Starting fuzzer with {} workers".format(self.config.num_workers))
         for w in self.workers:
             w.start()
+        
+        if len(self.worker_threads) != 0:
+            # Need to check if workers are started before stopping
+            for w in self.workers:
+                w.stop()
+
+        self.worker_threads = [Thread(target=w.run) for w in self.workers]
 
     def shutdown(self):
         for w in self.workers:
             w.shutdown()
 
-    def run(self):
-        self.sync.record_start()
-
+    def run_part(self):
+        self.start()
         for t in self.worker_threads:
             t.start()
-
+        
         while True:
-            # Poll the sync if it is done
             if self.sync.is_done():
                 break
             time.sleep(0.05)
-
+        
         for w in self.workers:
             w.stop()
-        
+        self.shutdown()
+
+    def run(self):
+        self.sync.record_start()
+
+        for i in range(0, self.config.iterations, 1000):
+            self.sync.reset_offset(i)
+            self.run_part()
+
         self.sync.record_end()
         
     

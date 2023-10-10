@@ -23,15 +23,14 @@ from .fuzzer_guider import get_guider
 @pytest.mark.timeout(0)
 def test_fuzzing_with_fuzzer(fuzzer: Fuzzer, config):
     benchmarks = [
-        ("line", get_guider("line", config.fuzzer_config, config), CombinedMutator([SwapMutator(), SwapCrashNodesMutator()])),
-        # ("random", get_guider("tlc", config.fuzzer_config, config), RandomMutator()), 
-        # ("tlc", get_guider("tlc", config.fuzzer_config, config), CombinedMutator([SwapMutator(), SwapCrashNodesMutator()])),
-        # ("trace", get_guider("trace", config.fuzzer_config, config), CombinedMutator([SwapMutator(), SwapCrashNodesMutator()]))
+        # ("line", get_guider("line", config.fuzzer_config, config), CombinedMutator([SwapMutator(), SwapCrashNodesMutator()])),
+        ("random", get_guider("tlc", config.fuzzer_config, config), RandomMutator()), 
+        ("tlc", get_guider("tlc", config.fuzzer_config, config), CombinedMutator([SwapMutator(), SwapCrashNodesMutator()])),
+        ("trace", get_guider("trace", config.fuzzer_config, config), CombinedMutator([SwapMutator(), SwapCrashNodesMutator()]))
     ]
     coverages = []
     stats = {}
     for (name, g, m) in benchmarks:
-        fuzzer.reset()
         fuzzer.update_gm(name, g, m)
         fuzzer.run()
         fuzzer.record_stats()

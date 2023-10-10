@@ -1,0 +1,1 @@
+{"random": {"random_traces": 1600, "mutated_traces": 400, "runtime": 1232.517593}, "tlc": {"random_traces": 424, "mutated_traces": 1576, "runtime": 2366.771243}, "trace": {"random_traces": 1600, "mutated_traces": 400, "runtime": 3836.149154}}

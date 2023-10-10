@@ -111,14 +111,24 @@ class _ServerHandler(BaseHTTPRequestHandler):
             self.send_error(HTTPStatus.NOT_FOUND, "Request not handled")
 
     
-
 class Server(ThreadingHTTPServer):
     def __init__(self, 
                  server_address, 
-                 handler: Router, 
-                 bind_and_activate: bool = True) -> None:
+                 handler: Router,) -> None:
         self.handler = handler
-        super().__init__(server_address, _ServerHandler, bind_and_activate)
+        super().__init__(server_address, _ServerHandler, False)
+
+    def start(self):
+        try:
+            self.server_bind()
+            self.server_activate()
+        except:
+            self.server_close()
+            raise
+    
+    def shutdown(self):
+        super().shutdown()
+        self.server_close()
 
     def finish_request(self, request, client_address) -> None:
         if self.RequestHandlerClass == _ServerHandler:
@@ -163,14 +173,19 @@ class Network:
         router.add_route("/event", self._handle_event)
 
         self.server = Server(addr, router)
-        self.server_thread = Thread(target=self.server.serve_forever)
+        self.server_thread = None
 
     def run(self):
+        self.server.start()
+        if self.server_thread is None:
+            self.server_thread = Thread(target=self.server.serve_forever)
         self.server_thread.start()
     
     def shutdown(self):
         self.server.shutdown()
-        self.server_thread.join()
+        if self.server_thread is not None:
+            self.server_thread.join()
+            self.server_thread = None
     
     def _handle_replica(self, request: Request) -> Response:
         self.logger.debug("Received replica: {}".format(request.content))

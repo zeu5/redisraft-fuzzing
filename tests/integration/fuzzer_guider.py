@@ -42,6 +42,19 @@ class TLCGuider:
 
         return 0
     
+    def save(self):
+        with open(path.join(self.record_path, "_states.json"), "w") as states_file:
+            json.dump(self.states, states_file)
+
+    def restore(self):        
+        try:
+            states = {}
+            with open(path.join(self.record_path, "_states.json")) as states_file:
+                states = json.load(states_file)
+            self.states = states
+        except:
+            pass
+    
     def coverage(self):
         return len(self.states.keys())
 
@@ -85,6 +98,20 @@ class TraceGuider(TLCGuider):
         
         return new
     
+    def save(self):
+        super().save()
+        with open(path.join(self.record_path, "_traces.json"), "w") as traces_file:
+            json.dump(self.traces, traces_file)
+    
+    def restore(self):
+        try:
+            traces = {}
+            with open(path.join(self.record_path, "_traces.json")) as traces_file:
+                traces = json.load(traces_file)
+            self.traces = traces
+        except:
+            pass
+
     def reset(self):
         self.traces = {}
         return super().reset()
@@ -101,11 +128,11 @@ class LineCoverageGuider(TLCGuider):
         LOG.debug("Getting line coverage info from: {}".format(self.root))
         try:
             self.lines_covered = read_linecov_data(self.root)
-            LOG.info("Lines covered: {}".format(self.lines_covered))
+            LOG.debug("Lines covered: {}".format(self.lines_covered))
         except Exception as e:
-            LOG.info("Error reading line coverage: {}".format(e))
+            LOG.debug("Error reading line coverage: {}".format(e))
         return self.lines_covered - old_lines_coverage
-    
+
     def reset(self):
         self.lines_covered = 0
         return super().reset()
