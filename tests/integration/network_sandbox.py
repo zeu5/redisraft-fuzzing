@@ -4,6 +4,7 @@ from typing import Any
 from urllib.parse import urlsplit, parse_qs
 from threading import Lock, Thread
 from base64 import b64encode
+from socket import SHUT_RDWR
 import requests
 import json
 import logging
@@ -128,6 +129,7 @@ class Server(ThreadingHTTPServer):
     
     def shutdown(self):
         super().shutdown()
+        self.socket.shutdown(SHUT_RDWR)
         self.server_close()
 
     def finish_request(self, request, client_address) -> None:
