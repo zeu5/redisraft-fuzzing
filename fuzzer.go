@@ -89,6 +89,12 @@ func (f *Fuzzer) Run() {
 	}
 }
 
+func (f *Fuzzer) Cleanup() {
+	for _, w := range f.workers {
+		w.Shutdown()
+	}
+}
+
 func (f *Fuzzer) GetStats() *Stats {
 	return f.sync.GetStats()
 }

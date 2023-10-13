@@ -72,9 +72,10 @@ func (f *FuzzerSync) GetStats() *Stats {
 }
 
 func (f *FuzzerSync) Update(iter int, trace *Trace, eventTrace *EventTrace, logs string, err error) {
-	f.logger.With(LogParams{"iter": iter, "logs": len(logs)}).Info("Compeleted iteration!")
+	f.logger.With(LogParams{"iter": iter, "logs": len(logs)}).Debug("Compeleted iteration")
 	iterS := fmt.Sprintf("%s_%d", f.recordPathPrefix, iter)
 	if len(logs) != 0 || err != nil {
+		f.logger.With(LogParams{"error": err, "iter": iter}).Info("Error running iteration")
 		f.recordLogs(iterS, logs)
 	}
 	if trace != nil && eventTrace != nil {

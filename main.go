@@ -19,6 +19,7 @@ func MainCommand() *cobra.Command {
 	var requests int
 	var workers int
 	var logLevel string
+	var runs int
 
 	cmd := &cobra.Command{
 		Run: func(cmd *cobra.Command, args []string) {
@@ -67,7 +68,7 @@ func MainCommand() *cobra.Command {
 			}()
 
 			fmt.Println("Running...")
-			c.Run(ctx)
+			c.Run(ctx, runs)
 			fmt.Println("Completed.")
 			close(doneCh)
 		},
@@ -75,6 +76,7 @@ func MainCommand() *cobra.Command {
 	cmd.PersistentFlags().IntVarP(&episodes, "episodes", "e", 1000, "Number of iterations")
 	cmd.PersistentFlags().IntVar(&horizon, "horizon", 100, "Number of steps for fuzzer to take")
 	cmd.PersistentFlags().IntVarP(&nodes, "nodes", "n", 3, "Number of nodes")
+	cmd.PersistentFlags().IntVar(&runs, "runs", 3, "Number of runs")
 	cmd.PersistentFlags().IntVarP(&requests, "requests", "r", 3, "Number of requests")
 	cmd.PersistentFlags().IntVarP(&workers, "workers", "w", 1, "Number of workers")
 	cmd.PersistentFlags().StringVarP(&savePath, "save", "s", "results", "Path to save coverage comparisons")

@@ -36,6 +36,10 @@ func NewFuzzerWorker(id int, ctx context.Context, config FuzzerConfig, sync *Fuz
 	return w, nil
 }
 
+func (w *FuzzerWorker) Shutdown() {
+	w.network.Shutdown()
+}
+
 func (w *FuzzerWorker) Reset() {
 	w.doneCh = make(chan struct{})
 	w.network.Reset()
@@ -54,7 +58,9 @@ func (w *FuzzerWorker) getCluster() *Cluster {
 
 func (w *FuzzerWorker) mimic(iter int, trace *Trace) {
 	iterLogger := w.logger.With(LogParams{"iter": iter})
-	iterLogger.Info("Starting iteration")
+	iterLogger.Debug("Starting iteration")
+	start := time.Now()
+
 	defer w.network.Reset()
 	cluster := w.getCluster()
 
@@ -150,6 +156,8 @@ func (w *FuzzerWorker) mimic(iter int, trace *Trace) {
 	if err != nil {
 		logs = cluster.GetLogs()
 	}
+	duration := time.Since(start)
+	iterLogger.With(LogParams{"duration": duration.String()}).Info("Completed iteration")
 	w.sync.Update(iter, trace.Copy(), eventTrace, logs, err)
 }
 

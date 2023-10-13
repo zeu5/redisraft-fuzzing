@@ -24,4 +24,4 @@ go.work
 tmp*
 results*
 *.log
-redisraft-fuzzing
+fuzzer

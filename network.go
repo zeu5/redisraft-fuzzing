@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"net"
 	"net/http"
 	"strconv"
 	"sync"
@@ -87,8 +88,10 @@ func NewInterceptNetwork(ctx context.Context, addr string, logger *Logger) *Fuzz
 	r.POST("/event", f.handleEvent)
 	r.POST("/message", f.handleMessage)
 	f.server = &http.Server{
-		Addr:    addr,
-		Handler: r,
+		Addr:         addr,
+		Handler:      r,
+		ReadTimeout:  5 * time.Second,
+		WriteTimeout: 5 * time.Second,
 	}
 
 	return f
@@ -302,8 +305,16 @@ func (n *FuzzerInterceptNetwork) mapEventToParams(t string, e map[string]interfa
 		node, _ := strconv.Atoi(eParams["node"].(string))
 		params["node"] = node
 	case "MembershipChange":
-		node, _ := strconv.Atoi(eParams["node"].(string))
-		params["action"] = eParams["action"].(string)
+		nodeI, ok := eParams["node"]
+		if !ok || nodeI == nil {
+			return params
+		}
+		node, _ := strconv.Atoi(nodeI.(string))
+		actionI, ok := eParams["action"]
+		if !ok || actionI == nil {
+			return params
+		}
+		params["action"] = actionI.(string)
 		params["node"] = node
 	case "UpdateSnapshot":
 		node, _ := strconv.Atoi(eParams["node"].(string))
@@ -327,6 +338,19 @@ func (n *FuzzerInterceptNetwork) Start() {
 		defer cancel()
 		n.server.Shutdown(ctx)
 	}()
+}
+
+// Shutdown stops the server
+func (n *FuzzerInterceptNetwork) Shutdown() {
+	select {
+	case <-n.ctx.Done():
+		return
+	default:
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	n.server.Shutdown(ctx)
 }
 
 func (n *FuzzerInterceptNetwork) Reset() {
@@ -393,8 +417,21 @@ func (n *FuzzerInterceptNetwork) Schedule(node int, maxMessages int) {
 	nodeAddr = n.nodes[node]
 	n.lock.Unlock()
 
+	client := &http.Client{
+		Transport: &http.Transport{
+			DialContext: (&net.Dialer{
+				Timeout:   5 * time.Second,
+				KeepAlive: 5 * time.Second,
+			}).DialContext,
+			TLSHandshakeTimeout:   5 * time.Second,
+			ResponseHeaderTimeout: 5 * time.Second,
+			ExpectContinueTimeout: 1 * time.Second,
+			DisableKeepAlives:     true,
+		},
+	}
+
 	for _, m := range messagesToSend {
-		go func(m Message, addr string) {
+		go func(m Message, addr string, client *http.Client) {
 			bs, err := json.Marshal(m)
 			if err != nil {
 				return
@@ -402,8 +439,8 @@ func (n *FuzzerInterceptNetwork) Schedule(node int, maxMessages int) {
 			n.logger.With(LogParams{
 				"message": string(bs),
 			}).Debug("sending message")
-			http.Post("http://"+addr+"/message", "application/json", bytes.NewBuffer(bs))
-		}(m.Copy(), nodeAddr)
+			client.Post("http://"+addr+"/message", "application/json", bytes.NewBuffer(bs))
+		}(m.Copy(), nodeAddr, client)
 
 		receiveEvent := Event{
 			Name:   "DeliverMessage",
