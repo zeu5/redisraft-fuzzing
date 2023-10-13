@@ -1,6 +1,8 @@
 package main
 
 import (
+	"os"
+
 	"github.com/sirupsen/logrus"
 )
 
@@ -18,6 +20,7 @@ type Logger struct {
 // NewLogger instantiates logger based on the config
 func NewLogger() *Logger {
 	l := logrus.New()
+	l.SetOutput(os.Stdout)
 	l.SetFormatter(&logrus.JSONFormatter{})
 	return &Logger{
 		entry: logrus.NewEntry(l),

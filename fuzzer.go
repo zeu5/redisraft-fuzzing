@@ -1,6 +1,9 @@
 package main
 
-import "context"
+import (
+	"context"
+	"os"
+)
 
 type FuzzerConfig struct {
 	Iterations      int
@@ -12,6 +15,7 @@ type FuzzerConfig struct {
 	RecordPath      string
 	LogLevel        string
 	BaseNetworkPort int
+	BaseWorkingDir  string
 
 	MutationsPerTrace int
 	SeedPopulation    int
@@ -34,13 +38,23 @@ type Fuzzer struct {
 
 func NewFuzzer(ctx context.Context, config FuzzerConfig) (*Fuzzer, error) {
 	f := &Fuzzer{
-		sync:    NewFuzzerSync(config),
 		workers: make([]*FuzzerWorker, config.NumWorkers),
 		config:  config,
 		ctx:     ctx,
 		logger:  NewLogger(),
 	}
 	f.logger.SetLevel(config.LogLevel)
+
+	if _, err := os.Stat(config.RecordPath); err == nil {
+		os.RemoveAll(config.RecordPath)
+	}
+	os.MkdirAll(config.RecordPath, 0777)
+	if _, err := os.Stat(config.BaseWorkingDir); err == nil {
+		os.RemoveAll(config.BaseWorkingDir)
+	}
+	os.MkdirAll(config.BaseWorkingDir, 0777)
+
+	f.sync = NewFuzzerSync(config, f.logger.With(LogParams{"type": "sync"}))
 	for i := 0; i < config.NumWorkers; i++ {
 		w, err := NewFuzzerWorker(i, ctx, config, f.sync, f.logger.With(LogParams{"worker": i + 1}))
 		if err != nil {

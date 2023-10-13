@@ -13,11 +13,11 @@ import (
 )
 
 type Message struct {
-	From          string
-	To            string
-	Data          string
-	Type          string
-	ID            string
+	From          string                 `json:"from"`
+	To            string                 `json:"to"`
+	Data          string                 `json:"data"`
+	Type          string                 `json:"type"`
+	ID            string                 `json:"id"`
 	ParsedMessage map[string]interface{} `json:"-"`
 }
 
@@ -82,7 +82,7 @@ func NewInterceptNetwork(ctx context.Context, addr string, logger *Logger) *Fuzz
 	}
 
 	gin.SetMode(gin.ReleaseMode)
-	r := gin.Default()
+	r := gin.New()
 	r.POST("/replica", f.handleReplica)
 	r.POST("/event", f.handleEvent)
 	r.POST("/message", f.handleMessage)
@@ -106,6 +106,7 @@ func (n *FuzzerInterceptNetwork) handleMessage(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "failed to unmarshal request"})
 		return
 	}
+	n.logger.With(LogParams{"message": parsedMessage}).Debug("received message")
 	m.ParsedMessage = parsedMessage
 	sendEvent := Event{
 		Name:   "SendMessage",
@@ -131,6 +132,7 @@ func (n *FuzzerInterceptNetwork) handleReplica(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "failed to unmarshal request"})
 		return
 	}
+	n.logger.With(LogParams{"replica": replica}).Debug("recieved replica info")
 	nodeID := 0
 	nodeIDI, ok := replica["id"]
 	if !ok {
@@ -172,6 +174,7 @@ func (n *FuzzerInterceptNetwork) handleEvent(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "failed to unmarshal request"})
 		return
 	}
+	n.logger.With(LogParams{"event": event}).Debug("received event")
 	nodeID := 0
 	nodeIDI, ok := event["replica"]
 	if !ok {
@@ -229,7 +232,7 @@ func (n *FuzzerInterceptNetwork) getRequestNumber(data string) int {
 func (n *FuzzerInterceptNetwork) getMessageEventParams(m Message) map[string]interface{} {
 	params := make(map[string]interface{})
 
-	params["term"] = m.ParsedMessage["term"].(int)
+	params["term"] = int(m.ParsedMessage["term"].(float64))
 	params["from"] = m.from()
 	params["to"] = m.to()
 
@@ -238,13 +241,10 @@ func (n *FuzzerInterceptNetwork) getMessageEventParams(m Message) map[string]int
 		params["type"] = "MsgApp"
 		params["log_term"] = m.ParsedMessage["prev_log_term"]
 		entries := make([]entry, 0)
-		for _, e := range m.ParsedMessage["entries"].([]map[string]interface{}) {
-			dataI, ok := e["data"]
-			if !ok {
-				continue
-			}
-			data, ok := dataI.(string)
-			if !ok || data == "" {
+		for _, eI := range m.ParsedMessage["entries"].([]interface{}) {
+			e := eI.(map[string]interface{})
+			data := e["data"].(string)
+			if data == "" {
 				continue
 			}
 			eTermI, ok := e["term"]
@@ -252,7 +252,7 @@ func (n *FuzzerInterceptNetwork) getMessageEventParams(m Message) map[string]int
 				continue
 			}
 			entries = append(entries, entry{
-				Term: eTermI.(int),
+				Term: int(eTermI.(float64)),
 				Data: strconv.Itoa(n.getRequestNumber(data)),
 			})
 		}
@@ -266,7 +266,7 @@ func (n *FuzzerInterceptNetwork) getMessageEventParams(m Message) map[string]int
 		params["entries"] = []entry{}
 		params["index"] = m.ParsedMessage["current_idx"]
 		params["commit"] = 0
-		params["reject"] = m.ParsedMessage["success"].(int) == 0
+		params["reject"] = int(m.ParsedMessage["success"].(float64)) == 0
 	case "request_vote_request":
 		params["type"] = "MsgVote"
 		params["log_term"] = m.ParsedMessage["last_log_term"]
@@ -280,7 +280,7 @@ func (n *FuzzerInterceptNetwork) getMessageEventParams(m Message) map[string]int
 		params["entries"] = []entry{}
 		params["index"] = 0
 		params["commit"] = 0
-		params["reject"] = m.ParsedMessage["vote_granted"].(int) == 0
+		params["reject"] = int(m.ParsedMessage["vote_granted"].(float64)) == 0
 	}
 	return params
 }
@@ -290,19 +290,25 @@ func (n *FuzzerInterceptNetwork) mapEventToParams(t string, e map[string]interfa
 	eParams := e["params"].(map[string]interface{})
 	switch t {
 	case "ClientRequest":
-		params["leader"] = eParams["leader"].(int)
+		leader, _ := strconv.Atoi(eParams["leader"].(string))
+		params["leader"] = leader
 		params["request"] = n.getRequestNumber(eParams["request"].(string))
 	case "BecomeLeader":
-		params["node"] = eParams["node"].(int)
-		params["term"] = eParams["term"].(int)
+		node, _ := strconv.Atoi(eParams["node"].(string))
+		term, _ := strconv.Atoi(eParams["term"].(string))
+		params["node"] = node
+		params["term"] = term
 	case "Timeout":
-		params["node"] = eParams["node"].(int)
+		node, _ := strconv.Atoi(eParams["node"].(string))
+		params["node"] = node
 	case "MembershipChange":
+		node, _ := strconv.Atoi(eParams["node"].(string))
 		params["action"] = eParams["action"].(string)
-		params["node"] = eParams["node"].(int)
+		params["node"] = node
 	case "UpdateSnapshot":
-		params["node"] = eParams["node"].(int)
-		params["snapshot_index"] = eParams["snapshot_index"].(int)
+		node, _ := strconv.Atoi(eParams["node"].(string))
+		params["node"] = node
+		params["snapshot_index"] = int(eParams["snapshot_index"].(float64))
 	default:
 		params = eParams
 	}
@@ -335,6 +341,9 @@ func (n *FuzzerInterceptNetwork) Reset() {
 }
 
 func (n *FuzzerInterceptNetwork) GetEventTrace() *EventTrace {
+	n.lock.Lock()
+	defer n.lock.Unlock()
+
 	return n.Events.Copy()
 }
 
@@ -390,6 +399,9 @@ func (n *FuzzerInterceptNetwork) Schedule(node int, maxMessages int) {
 			if err != nil {
 				return
 			}
+			n.logger.With(LogParams{
+				"message": string(bs),
+			}).Debug("sending message")
 			http.Post("http://"+addr+"/message", "application/json", bytes.NewBuffer(bs))
 		}(m.Copy(), nodeAddr)
 

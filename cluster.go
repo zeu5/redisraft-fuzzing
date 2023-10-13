@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path"
 	"strconv"
 	"strings"
 	"time"
@@ -65,7 +66,7 @@ func (r *RedisNode) Create() {
 
 	serverArgs := []string{
 		"--port", portS,
-		"--bind", "localhost",
+		"--bind", "0.0.0.0",
 		"--dir", r.config.WorkingDir,
 		"--dbfilename", fmt.Sprintf("redis%d.rdb", r.ID),
 		"--loglevel", "debug",
@@ -75,7 +76,7 @@ func (r *RedisNode) Create() {
 		"--raft.log-filename", fmt.Sprintf("redis%d.db", r.ID),
 		"--raft.use-test-network", "yes",
 		"--raft.log-fsync", "no",
-		"--raft.log-level", "debug",
+		"--raft.loglevel", "debug",
 		"--raft.tls-enabled", "no",
 		"--raft.trace", "off",
 		"--raft.test-network-server-addr", r.config.InterceptAddr,
@@ -83,7 +84,7 @@ func (r *RedisNode) Create() {
 		"--raft.request-timeout", strconv.Itoa(r.config.RequestTimeout),
 		"--raft.election-timeout", strconv.Itoa(r.config.ElectionTimeout),
 	}
-	r.logger.With(LogParams{"server-args": strings.Join(serverArgs, " ")}).Info("creating server")
+	r.logger.With(LogParams{"server-args": strings.Join(serverArgs, " ")}).Debug("creating server")
 
 	ctx, cancel := context.WithCancel(context.Background())
 	r.process = exec.CommandContext(ctx, r.config.BinaryPath, serverArgs...)
@@ -123,8 +124,6 @@ func (r *RedisNode) Stop() error {
 	r.ctx = nil
 	r.cancel = func() {}
 	r.process = nil
-	r.stderr = nil
-	r.stdout = nil
 
 	return err
 }
@@ -133,8 +132,8 @@ func (r *RedisNode) Terminate() error {
 	r.Stop()
 	r.Cleanup()
 
-	stdout := r.stdout.String()
-	stderr := r.stderr.String()
+	stdout := strings.ToLower(r.stdout.String())
+	stderr := strings.ToLower(r.stderr.String())
 
 	if strings.Contains(stdout, "redis bug report") || strings.Contains(stderr, "redis bug report") {
 		return errors.New("failed to terminate: redis crashed")
@@ -142,12 +141,13 @@ func (r *RedisNode) Terminate() error {
 	return nil
 }
 
-func (r *RedisNode) GetLogs() ([]byte, []byte) {
+func (r *RedisNode) GetLogs() (string, string) {
 	if r.stdout == nil || r.stderr == nil {
-		return []byte{}, []byte{}
+		return "", ""
 	}
-	return bytes.Clone(r.stdout.Bytes()), bytes.Clone(r.stderr.Bytes())
+	return r.stdout.String(), r.stderr.String()
 }
+
 func (r *RedisNode) Execute(args ...string) error {
 	if r.ctx == nil || r.process == nil {
 		return errors.New("redis server not started")
@@ -158,9 +158,13 @@ func (r *RedisNode) Execute(args ...string) error {
 	default:
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
 	defer cancel()
-	_, err := r.client.Do(ctx, args).Result()
+	argsI := make([]interface{}, len(args))
+	for i, a := range args {
+		argsI[i] = a
+	}
+	_, err := r.client.Do(ctx, argsI...).Result()
 	return err
 }
 
@@ -175,9 +179,13 @@ func (r *RedisNode) ExecuteAsync(args ...string) error {
 	}
 
 	go func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+		ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
 		defer cancel()
-		r.client.Do(ctx, args).Result()
+		argsI := make([]interface{}, len(args))
+		for i, a := range args {
+			argsI[i] = a
+		}
+		r.client.Do(ctx, argsI...).Result()
 	}()
 	return nil
 }
@@ -229,6 +237,11 @@ func (c *ClusterConfig) SetDefaults() {
 	if c.WorkingDir == "" {
 		c.WorkingDir = "/home/snagendra/Fuzzing/redisraft-fuzzing/tests/tmp"
 	}
+	if _, err := os.Stat(c.WorkingDir); err == nil {
+		os.RemoveAll(c.WorkingDir)
+	}
+	os.MkdirAll(c.WorkingDir, 0777)
+
 	if c.LogLevel == "" {
 		c.LogLevel = "INFO"
 	}
@@ -241,13 +254,19 @@ func (c *ClusterConfig) SetDefaults() {
 }
 
 func (c *ClusterConfig) GetNodeConfig(id int) *RedisNodeConfig {
+	nodeWorkDir := path.Join(c.WorkingDir, strconv.Itoa(id))
+	if _, err := os.Stat(nodeWorkDir); err == nil {
+		os.RemoveAll(nodeWorkDir)
+	}
+	os.MkdirAll(nodeWorkDir, 0777)
+
 	return &RedisNodeConfig{
 		ClusterID:           c.ID,
 		Port:                c.BasePort + id,
-		InterceptAddr:       fmt.Sprintf("localhost:%d", c.BaseInterceptPort+id),
-		InterceptListenAddr: c.InterceptListenAddr,
+		InterceptAddr:       c.InterceptListenAddr,
+		InterceptListenAddr: fmt.Sprintf("localhost:%d", c.BaseInterceptPort+id),
 		NodeID:              id,
-		WorkingDir:          c.WorkingDir,
+		WorkingDir:          nodeWorkDir,
 		RequestTimeout:      c.RequestTimeout,
 		ElectionTimeout:     c.ElectionTimeout,
 		ModulePath:          c.RaftModulePath,
@@ -279,16 +298,18 @@ func NewCluster(config *ClusterConfig, logger *Logger) *Cluster {
 
 func (c *Cluster) Start() error {
 	primaryAddr := ""
-	for nodeID, node := range c.Nodes {
+	for i := 1; i <= c.config.NumNodes; i++ {
+		node := c.Nodes[i]
 		if err := node.Start(); err != nil {
-			return fmt.Errorf("error starting node %d: %s", nodeID, err)
+			return fmt.Errorf("error starting node %d: %s", i, err)
 		}
-		if nodeID == 1 {
+		if i == 1 {
 			if err := node.cluster("init"); err != nil {
 				return fmt.Errorf("failed to initialize: %s", err)
 			}
 			primaryAddr = "localhost:" + strconv.Itoa(node.config.Port)
 		} else {
+			c.logger.With(LogParams{"cluster": primaryAddr}).Debug("joining cluster")
 			if err := node.cluster("join", primaryAddr); err != nil {
 				return fmt.Errorf("failed to join cluster: %s", err)
 			}
@@ -300,7 +321,7 @@ func (c *Cluster) Start() error {
 func (c *Cluster) Destroy() error {
 	var err error = nil
 	for _, node := range c.Nodes {
-		err = node.Stop()
+		err = node.Terminate()
 	}
 	return err
 }
@@ -315,7 +336,7 @@ func (c *Cluster) GetLogs() string {
 	for nodeID, node := range c.Nodes {
 		logLines = append(logLines, fmt.Sprintf("logs for node: %d\n", nodeID))
 		stdout, stderr := node.GetLogs()
-		logLines = append(logLines, "----- Stdout -----", string(stdout), "----- Stderr -----", string(stderr), "\n\n")
+		logLines = append(logLines, "----- Stdout -----", stdout, "----- Stderr -----", stderr, "\n\n")
 	}
 	return strings.Join(logLines, "\n")
 }

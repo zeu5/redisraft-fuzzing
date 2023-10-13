@@ -14,6 +14,7 @@ type FuzzerSync struct {
 	config  FuzzerConfig
 	guider  Guider
 	mutator Mutator
+	logger  *Logger
 
 	recordPathPrefix string
 	traceQueue       []*Trace
@@ -24,12 +25,13 @@ type FuzzerSync struct {
 	rand             *rand.Rand
 }
 
-func NewFuzzerSync(config FuzzerConfig) *FuzzerSync {
+func NewFuzzerSync(config FuzzerConfig, logger *Logger) *FuzzerSync {
 	s := &FuzzerSync{
 		doneCh:     make(chan struct{}),
 		config:     config,
 		guider:     nil,
 		mutator:    nil,
+		logger:     logger,
 		traceQueue: make([]*Trace, 0),
 		stats:      NewStats(),
 		iteration:  0,
@@ -70,8 +72,9 @@ func (f *FuzzerSync) GetStats() *Stats {
 }
 
 func (f *FuzzerSync) Update(iter int, trace *Trace, eventTrace *EventTrace, logs string, err error) {
+	f.logger.With(LogParams{"iter": iter, "logs": len(logs)}).Info("Compeleted iteration!")
 	iterS := fmt.Sprintf("%s_%d", f.recordPathPrefix, iter)
-	if err != nil {
+	if len(logs) != 0 || err != nil {
 		f.recordLogs(iterS, logs)
 	}
 	if trace != nil && eventTrace != nil {
@@ -110,6 +113,7 @@ func (f *FuzzerSync) Update(iter int, trace *Trace, eventTrace *EventTrace, logs
 
 func (f *FuzzerSync) recordLogs(filePrefix string, logs string) {
 	filePath := path.Join(f.config.RecordPath, filePrefix+".log")
+	f.logger.With(LogParams{"file": filePath}).Debug("Writing logs to file")
 	os.WriteFile(filePath, []byte(logs), 0644)
 }
 
@@ -141,7 +145,7 @@ func (f *FuzzerSync) GetTrace() (int, *Trace, bool) {
 
 	f.iteration += 1
 
-	return iteration + 1, trace, true
+	return iteration, trace, true
 }
 
 func (f *FuzzerSync) seed() {

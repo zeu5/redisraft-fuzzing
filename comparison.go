@@ -2,7 +2,15 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"os"
+	"path"
+
+	"gonum.org/v1/plot"
+	"gonum.org/v1/plot/plotter"
+	"gonum.org/v1/plot/plotutil"
+	"gonum.org/v1/plot/vg"
 )
 
 type benchmark struct {
@@ -80,6 +88,43 @@ func (c *Comparison) Run(ctx context.Context) error {
 		cov := stats.Coverages[len(stats.Coverages)-1]
 		fmt.Printf("Coverage for %s: %d\n", benchmark, cov)
 	}
+	c.plot()
 
 	return nil
+}
+
+func (c *Comparison) plot() {
+	p := plot.New()
+	p.Title.Text = "Comparison"
+	p.X.Label.Text = "Iteration"
+	p.Y.Label.Text = "States covered"
+
+	k := 0
+	for benchmark, stats := range c.Stats {
+		plotPoints := make([]plotter.XY, len(stats.Coverages))
+		for i, c := range stats.Coverages {
+			plotPoints[i] = plotter.XY{
+				X: float64(i),
+				Y: float64(c),
+			}
+		}
+		line, err := plotter.NewLine(plotter.XYs(plotPoints))
+		if err != nil {
+			continue
+		}
+		line.Color = plotutil.Color(k)
+		p.Add(line)
+		p.Legend.Add(benchmark, line)
+
+		k++
+	}
+	plotFile := path.Join(c.FuzzerConfig.RecordPath, "coverage.png")
+	p.Save(4*vg.Inch, 4*vg.Inch, plotFile)
+
+	bs, err := json.Marshal(c.Stats)
+	if err != nil {
+		return
+	}
+	dataFile := path.Join(c.FuzzerConfig.RecordPath, "data.json")
+	os.WriteFile(dataFile, bs, 0644)
 }

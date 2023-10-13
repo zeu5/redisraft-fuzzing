@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"path"
 	"strconv"
 	"time"
 )
@@ -46,13 +47,14 @@ func (w *FuzzerWorker) getCluster() *Cluster {
 	cConfig.BasePort = 5000 + w.ID*10
 	cConfig.InterceptListenAddr = w.networkAddr
 	cConfig.ID = w.ID
+	cConfig.WorkingDir = path.Join(w.config.BaseWorkingDir, strconv.Itoa(w.ID))
 
 	return NewCluster(cConfig, w.logger.With(LogParams{"type": "cluster"}))
 }
 
 func (w *FuzzerWorker) mimic(iter int, trace *Trace) {
 	iterLogger := w.logger.With(LogParams{"iter": iter})
-
+	iterLogger.Info("Starting iteration")
 	defer w.network.Reset()
 	cluster := w.getCluster()
 
@@ -66,6 +68,7 @@ func (w *FuzzerWorker) mimic(iter int, trace *Trace) {
 	}
 
 	ok := w.network.WaitForNodes(w.config.NumNodes)
+	iterLogger.Debug("all nodes connected")
 	if !ok {
 		w.sync.Update(iter, nil, nil, "", errors.New("could not connect to all nodes"))
 	}
@@ -138,7 +141,7 @@ func (w *FuzzerWorker) mimic(iter int, trace *Trace) {
 			}
 		}
 
-		time.Sleep(5 * time.Millisecond)
+		time.Sleep(30 * time.Millisecond)
 	}
 
 	eventTrace := w.network.GetEventTrace()

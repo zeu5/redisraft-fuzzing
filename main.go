@@ -29,6 +29,7 @@ func MainCommand() *cobra.Command {
 				NumNodes:        nodes,
 				RecordPath:      savePath,
 				BaseNetworkPort: 7074,
+				BaseWorkingDir:  workPath,
 				LogLevel:        logLevel,
 
 				MutationsPerTrace: 3,
@@ -40,13 +41,16 @@ func MainCommand() *cobra.Command {
 
 				ClusterConfig: &ClusterConfig{
 					NumNodes:              nodes,
-					WorkingDir:            workPath,
-					RaftModulePath:        "/Users/srinidhin/Local/github/redisraft-fuzzing/redisraft.so",
-					RedisServerBinaryPath: "/Users/srinidhin/Local/github/redis/src/redis-server",
+					RaftModulePath:        "/home/snagendra/Fuzzing/redisraft-fuzzing/redisraft.so",
+					RedisServerBinaryPath: "/home/snagendra/Fuzzing/redis/src/redis-server",
 				},
 			}
+			mutator := CombineMutators(NewSwapCrashNodeMutator(2), NewSwapNodeMutator(20), NewSwapMaxMessagesMutator(20))
+
 			c := NewComparison(fConfig)
 			c.AddBenchmark("random", NewTLCStateGuider("127.0.0.1:2023", path.Join(savePath, "random_traces")), RandomMutator())
+			c.AddBenchmark("tlc", NewTLCStateGuider("127.0.0.1:2023", path.Join(savePath, "tlc_traces")), mutator)
+			c.AddBenchmark("trace", NewTraceCoverageGuider("127.0.0.1:2023", path.Join(savePath, "trace_traces")), mutator)
 
 			sigCh := make(chan os.Signal, 1)
 			signal.Notify(sigCh, os.Interrupt)
@@ -64,6 +68,7 @@ func MainCommand() *cobra.Command {
 
 			fmt.Println("Running...")
 			c.Run(ctx)
+			fmt.Println("Completed.")
 			close(doneCh)
 		},
 	}
