@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"math/rand"
 	"os"
@@ -75,7 +76,9 @@ func (f *FuzzerSync) Update(iter int, trace *Trace, eventTrace *EventTrace, logs
 	f.logger.With(LogParams{"iter": iter, "logs": len(logs)}).Debug("Compeleted iteration")
 	iterS := fmt.Sprintf("%s_%d", f.recordPathPrefix, iter)
 	if len(logs) != 0 || err != nil {
-		f.logger.With(LogParams{"error": err, "iter": iter}).Info("Error running iteration")
+		if err != nil && !errors.Is(err, ErrRedisBug) {
+			f.logger.With(LogParams{"error": err, "iter": iter}).Info("Error running iteration")
+		}
 		f.recordLogs(iterS, logs)
 	}
 	if trace != nil && eventTrace != nil {

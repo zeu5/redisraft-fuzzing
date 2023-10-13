@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"io"
 	"net"
 	"net/http"
 	"strconv"
@@ -439,7 +440,11 @@ func (n *FuzzerInterceptNetwork) Schedule(node int, maxMessages int) {
 			n.logger.With(LogParams{
 				"message": string(bs),
 			}).Debug("sending message")
-			client.Post("http://"+addr+"/message", "application/json", bytes.NewBuffer(bs))
+			resp, err := client.Post("http://"+addr+"/message", "application/json", bytes.NewBuffer(bs))
+			if err == nil {
+				io.ReadAll(resp.Body)
+				resp.Body.Close()
+			}
 		}(m.Copy(), nodeAddr, client)
 
 		receiveEvent := Event{

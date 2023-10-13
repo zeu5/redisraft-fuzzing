@@ -15,6 +15,10 @@ import (
 	"github.com/redis/go-redis/v9"
 )
 
+var (
+	ErrRedisBug = errors.New("failed to terminate: redis bug encountered")
+)
+
 type RedisNodeConfig struct {
 	ClusterID           int
 	Port                int
@@ -136,7 +140,7 @@ func (r *RedisNode) Terminate() error {
 	stderr := strings.ToLower(r.stderr.String())
 
 	if strings.Contains(stdout, "redis bug report") || strings.Contains(stderr, "redis bug report") {
-		return errors.New("failed to terminate: redis crashed")
+		return ErrRedisBug
 	}
 	return nil
 }

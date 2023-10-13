@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path"
@@ -87,6 +88,12 @@ func (c *Comparison) RunOnce(ctx context.Context, run int) error {
 	}
 
 	fuzzer.Cleanup()
+
+	select {
+	case <-ctx.Done():
+		return errors.New("context expired")
+	default:
+	}
 
 	for benchmark, stats := range c.Stats {
 		cov := stats.Coverages[len(stats.Coverages)-1]
