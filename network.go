@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net"
 	"net/http"
@@ -63,7 +64,7 @@ type FuzzerInterceptNetwork struct {
 
 	lock       *sync.Mutex
 	nodes      map[int]string
-	mailboxes  map[int][]Message
+	mailboxes  map[string][]Message
 	Events     *EventTrace
 	requests   map[string]int
 	requestCtr int
@@ -76,7 +77,7 @@ func NewInterceptNetwork(ctx context.Context, addr string, logger *Logger) *Fuzz
 		ctx:        ctx,
 		lock:       new(sync.Mutex),
 		nodes:      make(map[int]string),
-		mailboxes:  make(map[int][]Message),
+		mailboxes:  make(map[string][]Message),
 		Events:     NewEventTrace(),
 		requests:   make(map[string]int),
 		requestCtr: 0,
@@ -118,12 +119,14 @@ func (n *FuzzerInterceptNetwork) handleMessage(c *gin.Context) {
 		Params: n.getMessageEventParams(m),
 	}
 
+	from := m.from()
+	mKey := fmt.Sprintf("%d_%d", from, to)
 	n.lock.Lock()
-	_, ok := n.mailboxes[to]
+	_, ok := n.mailboxes[mKey]
 	if !ok {
-		n.mailboxes[to] = make([]Message, 0)
+		n.mailboxes[mKey] = make([]Message, 0)
 	}
-	n.mailboxes[to] = append(n.mailboxes[to], m.Copy())
+	n.mailboxes[mKey] = append(n.mailboxes[mKey], m.Copy())
 	n.Events.Add(sendEvent)
 	n.lock.Unlock()
 
@@ -359,7 +362,7 @@ func (n *FuzzerInterceptNetwork) Reset() {
 	defer n.lock.Unlock()
 
 	n.Events = NewEventTrace()
-	n.mailboxes = make(map[int][]Message)
+	n.mailboxes = make(map[string][]Message)
 	n.nodes = make(map[int]string)
 	n.requests = make(map[string]int)
 	n.requestCtr = 0
@@ -396,11 +399,12 @@ func (n *FuzzerInterceptNetwork) WaitForNodes(numNodes int) bool {
 	return true
 }
 
-func (n *FuzzerInterceptNetwork) Schedule(node int, maxMessages int) {
+func (n *FuzzerInterceptNetwork) Schedule(from, to int, maxMessages int) {
 	messagesToSend := make([]Message, 0)
 	nodeAddr := ""
+	mKey := fmt.Sprintf("%d_%d", from, to)
 	n.lock.Lock()
-	mailbox, ok := n.mailboxes[node]
+	mailbox, ok := n.mailboxes[mKey]
 	if ok {
 		offset := 0
 		for i, m := range mailbox {
@@ -410,12 +414,12 @@ func (n *FuzzerInterceptNetwork) Schedule(node int, maxMessages int) {
 			}
 		}
 		if offset == len(mailbox)-1 {
-			n.mailboxes[node] = make([]Message, 0)
+			n.mailboxes[mKey] = make([]Message, 0)
 		} else {
-			n.mailboxes[node] = n.mailboxes[node][offset:]
+			n.mailboxes[mKey] = n.mailboxes[mKey][offset:]
 		}
 	}
-	nodeAddr = n.nodes[node]
+	nodeAddr = n.nodes[to]
 	n.lock.Unlock()
 
 	client := &http.Client{
@@ -449,7 +453,7 @@ func (n *FuzzerInterceptNetwork) Schedule(node int, maxMessages int) {
 
 		receiveEvent := Event{
 			Name:   "DeliverMessage",
-			Node:   node,
+			Node:   to,
 			Params: n.getMessageEventParams(m),
 		}
 		n.lock.Lock()

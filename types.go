@@ -3,6 +3,8 @@ package main
 type Choice struct {
 	Type        string
 	Node        int
+	From        int
+	To          int
 	Op          string
 	Step        int
 	MaxMessages int
@@ -12,6 +14,8 @@ func (c Choice) Copy() Choice {
 	return Choice{
 		Type:        c.Type,
 		Node:        c.Node,
+		From:        c.From,
+		To:          c.To,
 		Op:          c.Op,
 		Step:        c.Step,
 		MaxMessages: c.MaxMessages,

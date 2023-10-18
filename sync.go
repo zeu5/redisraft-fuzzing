@@ -163,11 +163,13 @@ func (f *FuzzerSync) seed() {
 func (f *FuzzerSync) randomTrace() *Trace {
 	trace := NewTrace()
 	for i := 0; i < f.config.Horizon; i++ {
-		idx := f.rand.Intn(f.config.NumNodes) + 1
+		fromIdx := f.rand.Intn(f.config.NumNodes) + 1
+		toIdx := f.rand.Intn(f.config.NumNodes) + 1
 		trace.Add(Choice{
 			Type:        "Node",
 			Step:        i,
-			Node:        idx,
+			From:        fromIdx,
+			To:          toIdx,
 			MaxMessages: f.rand.Intn(f.config.MaxMessages),
 		})
 	}

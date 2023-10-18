@@ -81,14 +81,16 @@ func (w *FuzzerWorker) mimic(iter int, trace *Trace) {
 
 	startPoints := make(map[int]int)
 	crashPoints := make(map[int]int)
-	scheduleNode := make([]int, w.config.Horizon)
+	scheduleFromNode := make([]int, w.config.Horizon)
+	scheduleToNode := make([]int, w.config.Horizon)
 	scheduleMaxMessages := make([]int, w.config.Horizon)
 	clientRequests := make(map[int]string)
 
 	for _, ch := range trace.Choices {
 		switch ch.Type {
 		case "Node":
-			scheduleNode[ch.Step] = ch.Node
+			scheduleFromNode[ch.Step] = ch.From
+			scheduleToNode[ch.Step] = ch.To
 			scheduleMaxMessages[ch.Step] = ch.MaxMessages
 		case "Start":
 			startPoints[ch.Step] = ch.Node
@@ -136,7 +138,9 @@ func (w *FuzzerWorker) mimic(iter int, trace *Trace) {
 			}
 		}
 
-		w.network.Schedule(scheduleNode[step], scheduleMaxMessages[step])
+		if _, ok := crashedNodes[scheduleToNode[step]]; !ok {
+			w.network.Schedule(scheduleFromNode[step], scheduleToNode[step], scheduleMaxMessages[step])
+		}
 
 		op, ok := clientRequests[step]
 		if ok {
