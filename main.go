@@ -49,6 +49,7 @@ func MainCommand() *cobra.Command {
 			mutator := CombineMutators(NewSwapCrashNodeMutator(2), NewSwapNodeMutator(20), NewSwapMaxMessagesMutator(20))
 
 			c := NewComparison(fConfig)
+			c.AddBenchmark("line", NewLineCovGuider("/home/snagendra/Fuzzing/redisraft-fuzzing/build/deps/raft/CMakeFiles/raft.dir/src", "127.0.0.1:2023", path.Join(savePath, "line_traces")), mutator)
 			c.AddBenchmark("random", NewTLCStateGuider("127.0.0.1:2023", path.Join(savePath, "random_traces")), RandomMutator())
 			c.AddBenchmark("tlc", NewTLCStateGuider("127.0.0.1:2023", path.Join(savePath, "tlc_traces")), mutator)
 			c.AddBenchmark("trace", NewTraceCoverageGuider("127.0.0.1:2023", path.Join(savePath, "trace_traces")), mutator)
