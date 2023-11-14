@@ -1830,6 +1830,21 @@ static void handleInfo(RedisModuleInfoCtx *ctx, int for_crash_report)
     RedisModule_InfoAddFieldULongLong(ctx, "client_attached_entries", rr->client_attached_entries);
     RedisModule_InfoAddFieldULongLong(ctx, "fsync_count", rr->log.fsync_count);
     RedisModule_InfoAddFieldULongLong(ctx, "fsync_max_microseconds", rr->log.fsync_max);
+    int num_entries = rr->raft ? raft_get_log_count(rr->raft) : 0;
+    for (int i = 0; i < num_entries; i++ ) {
+        raft_entry_t *entry = LogGet(&rr->log, i);
+        if (entry == NULL) {
+            continue;
+        }
+        char name[32];
+        snprintf(name, sizeof(name), "entry%d", i);
+
+        RedisModule_InfoBeginDictField(ctx, name);
+        RedisModule_InfoAddFieldLongLong(ctx, "term", entry->term);
+        RedisModule_InfoAddFieldLongLong(ctx, "id", (long) entry->id);
+        RedisModule_InfoAddFieldLongLong(ctx, "data_len", entry->data_len);
+        RedisModule_InfoEndDictField(ctx);
+    }
 
     uint64_t avg = 0;
     if (rr->log.fsync_count) {

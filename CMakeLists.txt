@@ -320,7 +320,7 @@ add_executable(main
         tests/unit/test_util.c)
 
 target_compile_options(main PUBLIC -include unit/dut_premble.h)
-target_link_libraries(main PRIVATE raft hiredis_static test_network_static Threads::Threads dl m)
+target_link_libraries(main PRIVATE raft hiredis_static test_network_static Threads::Threads dl m gcov)
 if (BUILD_TLS)
     target_link_libraries(main PRIVATE OpenSSL::SSL OpenSSL::Crypto hiredis_ssl_static)
 endif ()
