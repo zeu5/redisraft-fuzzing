@@ -5,7 +5,6 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
-	"fmt"
 	"os"
 	"path"
 	"strings"
@@ -53,9 +52,9 @@ func (t *TLCStateGuider) Coverage() int {
 func (t *TLCStateGuider) BranchCoverage() int {
 	branches, err := getBranches(t.objectPath, t.gCovProgramPath)
 	if err != nil {
-		return len(branches)
+		return 0
 	}
-	return 0
+	return len(branches)
 }
 
 func (t *TLCStateGuider) Check(iter string, trace *Trace, eventTrace *EventTrace, record bool) (bool, int) {
@@ -72,8 +71,6 @@ func (t *TLCStateGuider) Check(iter string, trace *Trace, eventTrace *EventTrace
 				t.statesMap[s.Key] = true
 			}
 		}
-	} else {
-		panic(fmt.Sprintf("error connecting to tlc: %s", err))
 	}
 	return numNewStates != 0, numNewStates
 }

@@ -222,3 +222,43 @@ func clearCovData(objectFilePath string) error {
 	}
 	return nil
 }
+
+type BranchCovGuider struct {
+	ObjectPath      string
+	GcovProgramPath string
+
+	Branches map[string]bool
+
+	*TLCStateGuider
+}
+
+var _ Guider = &BranchCovGuider{}
+
+func NewBranchCovGuider(objectPath, tlcAddr, recordPath string) *BranchCovGuider {
+	return &BranchCovGuider{
+		ObjectPath:      objectPath,
+		GcovProgramPath: "/usr/bin/gcov",
+		Branches:        make(map[string]bool),
+		TLCStateGuider:  NewTLCStateGuider(tlcAddr, recordPath, objectPath, "/usr/bin/gcov"),
+	}
+}
+
+func (l *BranchCovGuider) Check(iter string, trace *Trace, events *EventTrace, record bool) (bool, int) {
+	l.TLCStateGuider.Check(iter, trace, events, record)
+
+	// Get new lines
+	branches, err := getBranches(l.ObjectPath, l.GcovProgramPath)
+	if err != nil {
+		return false, 0
+	}
+	oldBranches := len(l.Branches)
+	l.Branches = mergeCoverage(l.Branches, branches)
+	newBranches := len(l.Branches)
+
+	return newBranches > oldBranches, newBranches - oldBranches
+}
+
+func (l *BranchCovGuider) Reset() {
+	l.TLCStateGuider.Reset()
+	l.Branches = make(map[string]bool)
+}
