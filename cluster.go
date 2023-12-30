@@ -39,7 +39,7 @@ type RedisNode struct {
 	client  *redis.Client
 	config  *RedisNodeConfig
 	ctx     context.Context
-	cancel  context.CancelFunc
+	cancel  func() error
 
 	stdout *bytes.Buffer
 	stderr *bytes.Buffer
@@ -58,7 +58,7 @@ func NewRedisNode(config *RedisNodeConfig, logger *Logger) *RedisNode {
 		}),
 		config: config,
 		ctx:    nil,
-		cancel: func() {},
+		cancel: func() error { return nil },
 		stdout: nil,
 		stderr: nil,
 	}
@@ -94,11 +94,20 @@ func (r *RedisNode) Create() {
 	r.process = exec.CommandContext(ctx, r.config.BinaryPath, serverArgs...)
 
 	r.ctx = ctx
-	r.cancel = cancel
-	r.stdout = new(bytes.Buffer)
-	r.stderr = new(bytes.Buffer)
+	r.cancel = func() error {
+		err := r.process.Process.Signal(os.Interrupt)
+		cancel()
+		return err
+	}
+	if r.stdout == nil {
+		r.stdout = new(bytes.Buffer)
+	}
+	if r.stderr == nil {
+		r.stderr = new(bytes.Buffer)
+	}
 	r.process.Stdout = r.stdout
 	r.process.Stderr = r.stderr
+	r.process.Cancel = r.cancel
 }
 
 func (r *RedisNode) Start() error {
@@ -126,7 +135,7 @@ func (r *RedisNode) Stop() error {
 	r.cancel()
 	err := r.process.Wait()
 	r.ctx = nil
-	r.cancel = func() {}
+	r.cancel = func() error { return nil }
 	r.process = nil
 
 	return err
