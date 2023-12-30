@@ -22,9 +22,10 @@ type benchmark struct {
 }
 
 type Stats struct {
-	Coverages     []int
-	RandomTraces  int
-	MutatedTraces int
+	Coverages           []int
+	FinalBranchCoverage int
+	RandomTraces        int
+	MutatedTraces       int
 }
 
 func NewStats() *Stats {
@@ -35,9 +36,10 @@ func NewStats() *Stats {
 
 func (s *Stats) Copy() *Stats {
 	new := &Stats{
-		Coverages:     make([]int, len(s.Coverages)),
-		RandomTraces:  s.RandomTraces,
-		MutatedTraces: s.MutatedTraces,
+		Coverages:           make([]int, len(s.Coverages)),
+		RandomTraces:        s.RandomTraces,
+		FinalBranchCoverage: s.FinalBranchCoverage,
+		MutatedTraces:       s.MutatedTraces,
 	}
 	copy(new.Coverages, s.Coverages)
 

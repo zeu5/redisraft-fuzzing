@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path"
 	"strconv"
 	"strings"
 )
@@ -26,7 +27,7 @@ func NewLineCovGuider(objectPath, tlcAddr, recordPath string) *LineCovGuider {
 		ObjectPath:      objectPath,
 		GcovProgramPath: "/usr/bin/gcov",
 		Lines:           make(map[string]bool),
-		TLCStateGuider:  NewTLCStateGuider(tlcAddr, recordPath),
+		TLCStateGuider:  NewTLCStateGuider(tlcAddr, recordPath, objectPath, "/usr/bin/gcov"),
 	}
 }
 
@@ -39,7 +40,7 @@ func (l *LineCovGuider) Check(iter string, trace *Trace, events *EventTrace, rec
 		return false, 0
 	}
 	oldLines := coveredLines(l.Lines)
-	l.Lines = mergeLines(l.Lines, lines)
+	l.Lines = mergeCoverage(l.Lines, lines)
 	newLines := coveredLines(l.Lines)
 
 	return newLines > oldLines, newLines - oldLines
@@ -65,13 +66,19 @@ type gcovFileOutput struct {
 }
 
 type gcovLineOutput struct {
-	BlockIDs        []interface{} `json:"block_ids"`
-	Branches        []interface{} `json:"branches"`
-	Calls           []interface{} `json:"calls"`
-	Count           int           `json:"count"`
-	LineNumber      int           `json:"line_number"`
-	UnexecutedBlock bool          `json:"unexecuted_block"`
-	FunctionName    string        `json:"function_name"`
+	BlockIDs        []interface{}       `json:"block_ids"`
+	Branches        []*gcovBranchOutput `json:"branches"`
+	Calls           []interface{}       `json:"calls"`
+	Count           int                 `json:"count"`
+	LineNumber      int                 `json:"line_number"`
+	UnexecutedBlock bool                `json:"unexecuted_block"`
+	FunctionName    string              `json:"function_name"`
+}
+
+type gcovBranchOutput struct {
+	Count       int  `json:"count"`
+	Fallthrough bool `json:"fallthrough"`
+	Throw       bool `json:"throw"`
 }
 
 func (g *gcovOutput) GetLines() map[string]bool {
@@ -83,6 +90,21 @@ func (g *gcovOutput) GetLines() map[string]bool {
 		}
 	}
 	return lines
+}
+
+func (g *gcovOutput) GetBranches() map[string]bool {
+	branches := make(map[string]bool)
+	for _, f := range g.Files {
+		for _, l := range f.Lines {
+			for i, b := range l.Branches {
+				if b.Count > 0 {
+					key := fmt.Sprintf("%s_%d_%d", f.File, l.LineNumber, i)
+					branches[key] = true
+				}
+			}
+		}
+	}
+	return branches
 }
 
 func getLines(objectFilePath string, gcovProgramPath string) (map[string]bool, error) {
@@ -114,14 +136,14 @@ func getLines(objectFilePath string, gcovProgramPath string) (map[string]bool, e
 				return lines, fmt.Errorf("error unmarshalling gcov output: %s", err)
 			}
 
-			lines = mergeLines(lines, data.GetLines())
+			lines = mergeCoverage(lines, data.GetLines())
 		}
 	}
 
 	return lines, nil
 }
 
-func mergeLines(one map[string]bool, two map[string]bool) map[string]bool {
+func mergeCoverage(one map[string]bool, two map[string]bool) map[string]bool {
 	out := make(map[string]bool)
 	for k, v := range one {
 		out[k] = v
@@ -144,4 +166,59 @@ func coveredLines(l map[string]bool) int {
 		}
 	}
 	return c
+}
+
+func getBranches(objectFilePath string, gcovProgramPath string) (map[string]bool, error) {
+	branches := make(map[string]bool)
+
+	if info, err := os.Stat(objectFilePath); err != nil || !info.IsDir() {
+		return branches, fmt.Errorf("invalid object directory path: %s", err)
+	}
+
+	files, err := os.ReadDir(objectFilePath)
+	if err != nil {
+		return branches, err
+	}
+	for _, file := range files {
+		if strings.Contains(file.Name(), "gcda") {
+			args := make([]string, 0)
+			args = append(args, "--json-format", "--stdout", "-b", file.Name())
+			out := new(bytes.Buffer)
+			cmd := exec.Command(gcovProgramPath, args...)
+			cmd.Dir = objectFilePath
+			cmd.Stdout = out
+
+			if err := cmd.Run(); err != nil {
+				return branches, fmt.Errorf("error running gcov program: %s", err)
+			}
+
+			data := &gcovOutput{}
+			if err := json.Unmarshal(out.Bytes(), data); err != nil {
+				return branches, fmt.Errorf("error unmarshalling gcov output: %s", err)
+			}
+
+			branches = mergeCoverage(branches, data.GetBranches())
+		}
+	}
+
+	return branches, nil
+}
+
+func clearCovData(objectFilePath string) error {
+	if info, err := os.Stat(objectFilePath); err != nil || !info.IsDir() {
+		return fmt.Errorf("invalid object directory path: %s", err)
+	}
+
+	files, err := os.ReadDir(objectFilePath)
+	if err != nil {
+		return err
+	}
+	for _, file := range files {
+		if strings.Contains(file.Name(), "gcda") {
+			if err := os.Remove(path.Join(objectFilePath, file.Name())); err != nil {
+				return fmt.Errorf("error removing file %s: %s", file.Name(), err)
+			}
+		}
+	}
+	return nil
 }

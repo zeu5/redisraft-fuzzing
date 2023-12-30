@@ -54,7 +54,6 @@ func (f *FuzzerSync) UpdateGM(recordPathPrefix string, guider Guider, mutator Mu
 }
 
 func (f *FuzzerSync) Reset() {
-
 	f.lock.Lock()
 	defer f.lock.Unlock()
 
@@ -69,6 +68,7 @@ func (f *FuzzerSync) Reset() {
 func (f *FuzzerSync) GetStats() *Stats {
 	f.lock.Lock()
 	defer f.lock.Unlock()
+	f.stats.FinalBranchCoverage = f.guider.BranchCoverage()
 	return f.stats.Copy()
 }
 

@@ -14,35 +14,48 @@ import (
 type Guider interface {
 	Check(iter string, trace *Trace, eventTrace *EventTrace, record bool) (bool, int)
 	Coverage() int
+	BranchCoverage() int
 	Reset()
 }
 
 type TLCStateGuider struct {
-	TLCAddr   string
-	statesMap map[int64]bool
-	tlcClient *TLCClient
+	TLCAddr         string
+	statesMap       map[int64]bool
+	tlcClient       *TLCClient
+	objectPath      string
+	gCovProgramPath string
 
 	recordPath string
 }
 
 var _ Guider = &TLCStateGuider{}
 
-func NewTLCStateGuider(tlcAddr, recordPath string) *TLCStateGuider {
+func NewTLCStateGuider(tlcAddr, recordPath, objectPath, gCovPath string) *TLCStateGuider {
 	return &TLCStateGuider{
-		TLCAddr:    tlcAddr,
-		statesMap:  make(map[int64]bool),
-		tlcClient:  NewTLCClient(tlcAddr),
-		recordPath: recordPath,
+		TLCAddr:         tlcAddr,
+		statesMap:       make(map[int64]bool),
+		tlcClient:       NewTLCClient(tlcAddr),
+		recordPath:      recordPath,
+		objectPath:      objectPath,
+		gCovProgramPath: gCovPath,
 	}
 }
 
 func (t *TLCStateGuider) Reset() {
 	t.statesMap = make(map[int64]bool)
-
+	clearCovData(t.objectPath)
 }
 
 func (t *TLCStateGuider) Coverage() int {
 	return len(t.statesMap)
+}
+
+func (t *TLCStateGuider) BranchCoverage() int {
+	branches, err := getBranches(t.objectPath, t.gCovProgramPath)
+	if err != nil {
+		return len(branches)
+	}
+	return 0
 }
 
 func (t *TLCStateGuider) Check(iter string, trace *Trace, eventTrace *EventTrace, record bool) (bool, int) {
@@ -110,10 +123,10 @@ type TraceCoverageGuider struct {
 
 var _ Guider = &TraceCoverageGuider{}
 
-func NewTraceCoverageGuider(tlcAddr, recordPath string) *TraceCoverageGuider {
+func NewTraceCoverageGuider(tlcAddr, recordPath, objectPath, gCovPath string) *TraceCoverageGuider {
 	return &TraceCoverageGuider{
 		traces:         make(map[string]bool),
-		TLCStateGuider: NewTLCStateGuider(tlcAddr, recordPath),
+		TLCStateGuider: NewTLCStateGuider(tlcAddr, recordPath, objectPath, gCovPath),
 	}
 }
 

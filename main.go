@@ -46,13 +46,46 @@ func MainCommand() *cobra.Command {
 					RedisServerBinaryPath: "/home/snagendra/Fuzzing/redis/src/redis-server",
 				},
 			}
+			baseObjectPath := "/home/snagendra/Fuzzing/redisraft-fuzzing/build/deps/raft/CMakeFiles/raft.dir/src"
+			gCovPath := "/usr/bin/gcov"
+
 			mutator := CombineMutators(NewSwapCrashNodeMutator(2), NewSwapNodeMutator(20), NewSwapMaxMessagesMutator(20))
 
 			c := NewComparison(fConfig)
-			c.AddBenchmark("line", NewLineCovGuider("/home/snagendra/Fuzzing/redisraft-fuzzing/build/deps/raft/CMakeFiles/raft.dir/src", "127.0.0.1:2023", path.Join(savePath, "line_traces")), mutator)
-			c.AddBenchmark("random", NewTLCStateGuider("127.0.0.1:2023", path.Join(savePath, "random_traces")), RandomMutator())
-			c.AddBenchmark("tlc", NewTLCStateGuider("127.0.0.1:2023", path.Join(savePath, "tlc_traces")), mutator)
-			c.AddBenchmark("trace", NewTraceCoverageGuider("127.0.0.1:2023", path.Join(savePath, "trace_traces")), mutator)
+			c.AddBenchmark(
+				"line",
+				NewLineCovGuider(baseObjectPath, "127.0.0.1:2023", path.Join(savePath, "line_traces")), mutator,
+			)
+			c.AddBenchmark(
+				"random",
+				NewTLCStateGuider(
+					"127.0.0.1:2023",
+					path.Join(savePath, "random_traces"),
+					baseObjectPath,
+					gCovPath,
+				),
+				RandomMutator(),
+			)
+			c.AddBenchmark(
+				"tlc",
+				NewTLCStateGuider(
+					"127.0.0.1:2023",
+					path.Join(savePath, "tlc_traces"),
+					baseObjectPath,
+					gCovPath,
+				),
+				mutator,
+			)
+			c.AddBenchmark(
+				"trace",
+				NewTraceCoverageGuider(
+					"127.0.0.1:2023",
+					path.Join(savePath, "trace_traces"),
+					baseObjectPath,
+					gCovPath,
+				),
+				mutator,
+			)
 
 			sigCh := make(chan os.Signal, 1)
 			signal.Notify(sigCh, os.Interrupt)
