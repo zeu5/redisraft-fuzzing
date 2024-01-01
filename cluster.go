@@ -139,10 +139,10 @@ func (r *RedisNode) Stop() error {
 		err := r.process.Wait()
 		done <- err
 	}()
-	var err error
+	var err error = nil
 	select {
 	case <-time.After(50 * time.Millisecond):
-		r.process.Process.Kill()
+		err = r.process.Process.Kill()
 	case err = <-done:
 	}
 
