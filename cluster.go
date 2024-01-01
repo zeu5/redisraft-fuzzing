@@ -133,7 +133,19 @@ func (r *RedisNode) Stop() error {
 	default:
 	}
 	r.cancel()
-	err := r.process.Wait()
+	// Wait for process with a timeout
+	done := make(chan error, 1)
+	go func() {
+		err := r.process.Wait()
+		done <- err
+	}()
+	var err error
+	select {
+	case <-time.After(50 * time.Millisecond):
+		r.process.Process.Kill()
+	case err = <-done:
+	}
+
 	r.ctx = nil
 	r.cancel = func() error { return nil }
 	r.process = nil
