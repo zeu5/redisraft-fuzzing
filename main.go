@@ -11,6 +11,35 @@ import (
 )
 
 func MainCommand() *cobra.Command {
+	cmd := &cobra.Command{}
+	cmd.AddCommand(CompareCommand())
+	cmd.AddCommand(MeasureCommand())
+	return cmd
+}
+
+func MeasureCommand() *cobra.Command {
+	var tracesPath string
+	var tlcAddr string
+	var outPath string
+	cmd := &cobra.Command{
+		Use: "measure",
+		Run: func(cmd *cobra.Command, args []string) {
+			if outPath == "" {
+				outPath = tracesPath
+			}
+			m := NewTLCCoverageMeasurer(tracesPath, outPath, tlcAddr)
+			if err := m.Measure(); err != nil {
+				fmt.Println(err)
+			}
+		},
+	}
+	cmd.Flags().StringVar(&tracesPath, "traces", "traces", "Path to traces")
+	cmd.Flags().StringVar(&tlcAddr, "tlc", "localhost:2023", "TLC Server address")
+	cmd.Flags().StringVar(&outPath, "out", "", "Output path")
+	return cmd
+}
+
+func CompareCommand() *cobra.Command {
 	var episodes int
 	var horizon int
 	var savePath string
@@ -22,6 +51,7 @@ func MainCommand() *cobra.Command {
 	var runs int
 
 	cmd := &cobra.Command{
+		Use: "compare",
 		Run: func(cmd *cobra.Command, args []string) {
 			fConfig := FuzzerConfig{
 				Iterations:      episodes,
