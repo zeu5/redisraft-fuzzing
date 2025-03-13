@@ -2,12 +2,16 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path"
 	"path/filepath"
+	"strconv"
 	"strings"
 )
+
+var ErrNoTraceFile = errors.New("no trace file")
 
 type TLCCoverageMeasurer struct {
 	tracesPath string
@@ -31,6 +35,9 @@ func NewTLCCoverageMeasurer(tracesPath, outPath, tlcAddr string) *TLCCoverageMea
 
 func (p *TLCCoverageMeasurer) parseTrace(filePath string) (*EventTrace, error) {
 	data, err := os.ReadFile(filePath)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil, ErrNoTraceFile
+	}
 	if err != nil {
 		return nil, fmt.Errorf("error reading trace file: %s", err)
 	}
@@ -53,6 +60,9 @@ func (p *TLCCoverageMeasurer) Measure() error {
 		tracePath := path.Join(p.tracesPath, fmt.Sprintf("traces_bonusRlMax_%d.json", i))
 		fmt.Printf("\rChecking %d/%d trace", i, tracePathCount)
 		trace, err := p.parseTrace(tracePath)
+		if errors.Is(err, ErrNoTraceFile) {
+			continue
+		}
 		if err != nil {
 			return fmt.Errorf("error parsing trace: %s", err)
 		}
@@ -88,7 +98,18 @@ func (p *TLCCoverageMeasurer) loadTracePathCount() (int, error) {
 		if !strings.HasSuffix(file.Name(), ".json") {
 			continue
 		}
-		count++
+
+		splitFileNameParts := strings.Split(strings.TrimSuffix(file.Name(), ".json"), "_")
+		if len(splitFileNameParts) != 3 {
+			continue
+		}
+		val, err := strconv.Atoi(splitFileNameParts[2])
+		if err != nil {
+			continue
+		}
+		if val > count {
+			count = val
+		}
 	}
 	return count, nil
 }
