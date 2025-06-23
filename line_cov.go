@@ -39,16 +39,20 @@ func (l *LineCovGuider) Check(iter string, trace *Trace, events *EventTrace, rec
 	if err != nil {
 		return false, 0
 	}
+	l.lock.Lock()
 	oldLines := coveredLines(l.Lines)
 	l.Lines = mergeCoverage(l.Lines, lines)
 	newLines := coveredLines(l.Lines)
+	l.lock.Unlock()
 
 	return newLines > oldLines, newLines - oldLines
 }
 
 func (l *LineCovGuider) Reset() {
 	l.TLCStateGuider.Reset()
+	l.lock.Lock()
 	l.Lines = make(map[string]bool)
+	l.lock.Unlock()
 }
 
 type gcovOutput struct {

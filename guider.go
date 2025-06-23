@@ -8,6 +8,7 @@ import (
 	"os"
 	"path"
 	"strings"
+	"sync"
 )
 
 type Guider interface {
@@ -25,6 +26,7 @@ type TLCStateGuider struct {
 	gCovProgramPath string
 
 	recordPath string
+	lock       *sync.Mutex
 }
 
 var _ Guider = &TLCStateGuider{}
@@ -37,15 +39,20 @@ func NewTLCStateGuider(tlcAddr, recordPath, objectPath, gCovPath string) *TLCSta
 		recordPath:      recordPath,
 		objectPath:      objectPath,
 		gCovProgramPath: gCovPath,
+		lock:            new(sync.Mutex),
 	}
 }
 
 func (t *TLCStateGuider) Reset() {
+	t.lock.Lock()
+	defer t.lock.Unlock()
 	t.statesMap = make(map[int64]bool)
 	clearCovData(t.objectPath)
 }
 
 func (t *TLCStateGuider) Coverage() int {
+	t.lock.Lock()
+	defer t.lock.Unlock()
 	return len(t.statesMap)
 }
 
@@ -65,11 +72,13 @@ func (t *TLCStateGuider) Check(iter string, trace *Trace, eventTrace *EventTrace
 			t.recordTrace(iter, trace, eventTrace, tlcStates)
 		}
 		for _, s := range tlcStates {
+			t.lock.Lock()
 			_, ok := t.statesMap[s.Key]
 			if !ok {
 				numNewStates += 1
 				t.statesMap[s.Key] = true
 			}
+			t.lock.Unlock()
 		}
 	}
 	return numNewStates != 0, numNewStates
@@ -133,6 +142,8 @@ func (t *TraceCoverageGuider) Check(iter string, trace *Trace, events *EventTrac
 	eTrace := newEventTrace(events)
 	key := eTrace.Hash()
 
+	t.lock.Lock()
+	defer t.lock.Unlock()
 	new := 0
 	if _, ok := t.traces[key]; !ok {
 		t.traces[key] = true
@@ -147,7 +158,9 @@ func (t *TraceCoverageGuider) Coverage() int {
 }
 
 func (t *TraceCoverageGuider) Reset() {
+	t.lock.Lock()
 	t.traces = make(map[string]bool)
+	t.lock.Unlock()
 	t.TLCStateGuider.Reset()
 }
 
