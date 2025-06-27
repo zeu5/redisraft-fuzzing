@@ -72,11 +72,11 @@ func CompareCommand() *cobra.Command {
 
 				ClusterConfig: &ClusterConfig{
 					NumNodes:              nodes,
-					RaftModulePath:        "/home/snagendra/Fuzzing/redisraft-fuzzing/redisraft.so",
-					RedisServerBinaryPath: "/home/snagendra/Fuzzing/redis/src/redis-server",
+					RaftModulePath:        "/Fuzzing/redis-instrumented/redisraft/redisraft.so",
+					RedisServerBinaryPath: "/Fuzzing/redis-instrumented/bin/redis-server",
 				},
 			}
-			baseObjectPath := "/home/snagendra/Fuzzing/redisraft-fuzzing/build/deps/raft/CMakeFiles/raft.dir/src"
+			baseObjectPath := "/Fuzzing/redis-instrumented/redisraft/build/deps/raft/CMakeFiles/raft.dir/src"
 			gCovPath := "/usr/bin/gcov"
 
 			mutator := CombineMutators(NewSwapCrashNodeMutator(2), NewSwapNodeMutator(20), NewSwapMaxMessagesMutator(20))
