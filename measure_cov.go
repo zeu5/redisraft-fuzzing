@@ -76,6 +76,9 @@ func (p *TLCCoverageMeasurer) Measure() error {
 		coverages = append(coverages, len(p.cov))
 	}
 	fmt.Println("... Done")
+	if len(coverages) != 0 {
+		fmt.Printf("Final coverage on the model is %d\n", coverages[len(coverages)-1])
+	}
 	jsonData, err := json.Marshal(map[string]interface{}{
 		"coverages": coverages,
 	})
